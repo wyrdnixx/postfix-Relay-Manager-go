@@ -239,7 +239,46 @@ func runPostfixChecks() []CheckResult {
 		}
 	}
 
-	// 10. inet_interfaces – lauscht Postfix auf externe Verbindungen?
+	// 10. smtp_host_lookup – muss 'native' enthalten damit /etc/hosts gelesen wird
+	if mainCfReadable {
+		if smtpHostLookupRe.MatchString(string(mainCfContent)) {
+			m := smtpHostLookupRe.FindSubmatch(mainCfContent)
+			val := strings.TrimSpace(string(m[1]))
+			if val == "dns" || val == "" {
+				results = append(results, CheckResult{
+					Name:    "smtp_host_lookup",
+					Status:  "err",
+					Message: fmt.Sprintf("smtp_host_lookup = %s", val),
+					Detail: "Mit 'dns' ignoriert Postfix /etc/hosts komplett – die Failover-Hostnamen\n" +
+						"relay-int.prm und relay-ext.prm können nicht aufgelöst werden.\n" +
+						"Setzen Sie: smtp_host_lookup = native",
+				})
+			} else if strings.Contains(val, "native") {
+				results = append(results, CheckResult{
+					Name:    "smtp_host_lookup",
+					Status:  "ok",
+					Message: fmt.Sprintf("smtp_host_lookup = %s", val),
+				})
+			} else {
+				results = append(results, CheckResult{
+					Name:    "smtp_host_lookup",
+					Status:  "warn",
+					Message: fmt.Sprintf("smtp_host_lookup = %s", val),
+					Detail:  "Der Wert enthält kein 'native' – /etc/hosts wird möglicherweise nicht gelesen.",
+				})
+			}
+		} else {
+			results = append(results, CheckResult{
+				Name:    "smtp_host_lookup",
+				Status:  "err",
+				Message: "smtp_host_lookup fehlt in main.cf (Standard: dns)",
+				Detail: "Ohne diesen Eintrag verwendet Postfix standardmäßig nur DNS.\n" +
+					"Setzen Sie: smtp_host_lookup = native",
+			})
+		}
+	}
+
+	// 12. inet_interfaces – lauscht Postfix auf externe Verbindungen?
 	if mainCfReadable {
 		if inetInterfacesRe.MatchString(string(mainCfContent)) {
 			m := inetInterfacesRe.FindSubmatch(mainCfContent)
@@ -261,7 +300,7 @@ func runPostfixChecks() []CheckResult {
 		}
 	}
 
-	// 11. Interne Relay-Server erreichbar?
+	// 13. Interne Relay-Server erreichbar?
 	for _, srv := range relayServersInternal {
 		addr := fmt.Sprintf("%s:%d", srv.Host, srv.Port)
 		conn, err := net.DialTimeout("tcp", addr, 3*time.Second)
@@ -282,7 +321,7 @@ func runPostfixChecks() []CheckResult {
 		}
 	}
 
-	// 12. Externe Relay-Server erreichbar?
+	// 14. Externe Relay-Server erreichbar?
 	for _, srv := range relayServersExternal {
 		addr := fmt.Sprintf("%s:%d", srv.Host, srv.Port)
 		conn, err := net.DialTimeout("tcp", addr, 3*time.Second)
