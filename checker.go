@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -278,7 +279,7 @@ func runPostfixChecks() []CheckResult {
 		}
 	}
 
-	// 12. inet_interfaces – lauscht Postfix auf externe Verbindungen?
+	// 11. inet_interfaces – lauscht Postfix auf externe Verbindungen?
 	if mainCfReadable {
 		if inetInterfacesRe.MatchString(string(mainCfContent)) {
 			m := inetInterfacesRe.FindSubmatch(mainCfContent)
@@ -305,7 +306,7 @@ func runPostfixChecks() []CheckResult {
 
 	// 13. Interne Relay-Server erreichbar?
 	for _, srv := range intSrvs {
-		addr := fmt.Sprintf("%s:%d", srv.Host, srv.Port)
+		addr := net.JoinHostPort(srv.Host, strconv.Itoa(srv.Port))
 		conn, err := net.DialTimeout("tcp", addr, 3*time.Second)
 		if err != nil {
 			results = append(results, CheckResult{
@@ -326,7 +327,7 @@ func runPostfixChecks() []CheckResult {
 
 	// 14. Externe Relay-Server erreichbar?
 	for _, srv := range extSrvs {
-		addr := fmt.Sprintf("%s:%d", srv.Host, srv.Port)
+		addr := net.JoinHostPort(srv.Host, strconv.Itoa(srv.Port))
 		conn, err := net.DialTimeout("tcp", addr, 3*time.Second)
 		if err != nil {
 			results = append(results, CheckResult{

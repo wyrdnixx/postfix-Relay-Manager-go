@@ -275,7 +275,6 @@ func postfixPurge() error {
 	if err != nil {
 		return fmt.Errorf("postsuper -d ALL: %w\n%s", err, out)
 	}
-	_ = out
 	return nil
 }
 

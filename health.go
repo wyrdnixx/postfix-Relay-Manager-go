@@ -1,9 +1,9 @@
 package main
 
 import (
-	"fmt"
 	"net"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -49,7 +49,7 @@ type HealthResult struct {
 }
 
 func checkPort(host string, port int, timeout time.Duration) bool {
-	conn, err := net.DialTimeout("tcp", fmt.Sprintf("%s:%d", host, port), timeout)
+	conn, err := net.DialTimeout("tcp", net.JoinHostPort(host, strconv.Itoa(port)), timeout)
 	if err != nil {
 		return false
 	}
@@ -69,14 +69,14 @@ func checkRelayHealth() []HealthResult {
 	seen := make(map[string]bool)
 	var tasks []task
 	for _, srv := range intSrvs {
-		key := fmt.Sprintf("%s:%d", srv.Host, srv.Port)
+		key := net.JoinHostPort(srv.Host, strconv.Itoa(srv.Port))
 		if !seen[key] {
 			seen[key] = true
 			tasks = append(tasks, task{srv.Host, srv.Port, "Intern"})
 		}
 	}
 	for _, srv := range extSrvs {
-		key := fmt.Sprintf("%s:%d", srv.Host, srv.Port)
+		key := net.JoinHostPort(srv.Host, strconv.Itoa(srv.Port))
 		if !seen[key] {
 			seen[key] = true
 			tasks = append(tasks, task{srv.Host, srv.Port, "Extern"})
