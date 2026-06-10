@@ -1,0 +1,17 @@
+[Unit]
+Description=Postfix Relay Manager
+After=network.target postfix.service
+Wants=postfix.service
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/postfix-relay-manager
+ExecStart=/opt/postfix-relay-manager/postfix-relay-manager
+Restart=on-failure
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
