@@ -22,16 +22,10 @@ const (
 
 var hostedSectionRe = regexp.MustCompile(`(?s)` + hostsBegin + `.*?` + hostsEnd + `\n?`)
 
-// manageHostsEntries schreibt die Relay-Server-IPs als A-Records in /etc/hosts,
-// damit Postfix bei Ausfall eines Servers automatisch den nächsten versucht.
+// manageHostsEntries schreibt die Relay-Server-IPs als A-Records in /etc/hosts
+// und in den Postfix-Chroot (/var/spool/postfix/etc/hosts), damit der SMTP-Client
+// von Postfix die synthetischen Hostnamen auflösen kann.
 func manageHostsEntries() error {
-	b, err := os.ReadFile(hostsFile)
-	if err != nil {
-		return fmt.Errorf("hosts lesen: %w", err)
-	}
-	content := hostedSectionRe.ReplaceAllString(string(b), "")
-	content = strings.TrimRight(content, "\n") + "\n"
-
 	var section strings.Builder
 	fmt.Fprintln(&section, hostsBegin)
 	for _, srv := range relayServersInternal {
@@ -42,7 +36,20 @@ func manageHostsEntries() error {
 	}
 	fmt.Fprintln(&section, hostsEnd)
 
-	return os.WriteFile(hostsFile, []byte(content+section.String()), 0644)
+	for _, path := range []string{hostsFile, "/var/spool/postfix/etc/hosts"} {
+		b, err := os.ReadFile(path)
+		if err != nil {
+			if os.IsNotExist(err) {
+				continue
+			}
+			return fmt.Errorf("hosts lesen (%s): %w", path, err)
+		}
+		content := strings.TrimRight(hostedSectionRe.ReplaceAllString(string(b), ""), "\n") + "\n"
+		if err := os.WriteFile(path, []byte(content+section.String()), 0644); err != nil {
+			return fmt.Errorf("hosts schreiben (%s): %w", path, err)
+		}
+	}
+	return nil
 }
 
 // buildAllowedClients erzeugt den Inhalt der allowed_clients-Datei.
@@ -70,6 +77,8 @@ func buildAllowedClients(systems []System) string {
 var mynetworksRe = regexp.MustCompile(`(?m)^mynetworks\s*=\s*(.*)$`)
 var relayhostRe = regexp.MustCompile(`(?m)^relayhost\s*=\s*(.*)$`)
 var inetInterfacesRe = regexp.MustCompile(`(?m)^inet_interfaces\s*=\s*(.*)$`)
+var inetProtocolsRe = regexp.MustCompile(`(?m)^inet_protocols\s*=\s*(.*)$`)
+var smtpHostLookupRe = regexp.MustCompile(`(?m)^smtp_host_lookup\s*=\s*(.*)$`)
 
 // buildRelayhost gibt den Relayhost-Wert zurück.
 // Durch den synthetischen Hostnamen probiert Postfix alle A-Records aus /etc/hosts.
@@ -156,6 +165,21 @@ func writeMainCf() error {
 		if val == "loopback-only" || val == "localhost" {
 			content = inetInterfacesRe.ReplaceAllString(content, "inet_interfaces = all")
 		}
+	}
+
+	// inet_protocols = ipv4: keine AAAA-Lookups für synthetische Hostnamen
+	if inetProtocolsRe.MatchString(content) {
+		content = inetProtocolsRe.ReplaceAllString(content, "inet_protocols = ipv4")
+	} else {
+		content += "\ninet_protocols = ipv4\n"
+	}
+
+	// smtp_host_lookup = native: OS-Resolver verwenden (liest /etc/hosts via nsswitch),
+	// damit die synthetischen Hostnamen relay-int.prm / relay-ext.prm aufgelöst werden.
+	if smtpHostLookupRe.MatchString(content) {
+		content = smtpHostLookupRe.ReplaceAllString(content, "smtp_host_lookup = native")
+	} else {
+		content += "\nsmtp_host_lookup = native\n"
 	}
 
 	return os.WriteFile(mainCfFile, []byte(content), 0644)
