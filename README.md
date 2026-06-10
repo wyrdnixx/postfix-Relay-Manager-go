@@ -9,7 +9,9 @@ Webbasiertes Verwaltungswerkzeug für einen Postfix-Server, der als SMTP-Relay f
 | Seite | Funktion |
 |---|---|
 | **Startseite** | Übersicht aller registrierten Systeme, hinzufügen / bearbeiten / löschen |
+| **Bulk-Import** | Mehrere IP-Adressen auf einmal importieren (Zeilenumbruch- oder Komma-getrennt) |
 | **Postfix-Status** | Warteschlange, Dienststatus, Aktionen (Resend, Löschen, Neustart), Test-Mail |
+| **Protokoll** | Tab 1: abgelehnte Relay-Versuche unbekannter IPs — Tab 2: Zustellprotokoll mit Absender-IP, Queue-ID, Relay, Status |
 | **Systemprüfung** | Automatische Diagnose der Postfix-Konfiguration und Relay-Erreichbarkeit |
 | **Einstellungen** | Relay-Server konfigurieren, Passwort ändern |
 
@@ -20,30 +22,39 @@ Der **Queue-Badge** in der Navigation zeigt die aktuelle Anzahl wartender Mails 
 ## Voraussetzungen
 
 - Linux-Server mit installiertem und laufendem Postfix
-- Go 1.22 oder neuer (nur zum Kompilieren)
+- Go 1.22 oder neuer (nur zum Selbstkompilieren, nicht nötig wenn das enthaltene Binary verwendet wird)
 - Root-Berechtigung oder `sudo` (für Postfix-Konfiguration und `/etc/hosts`)
 
 ---
 
 ## Installation
 
-### 1. Kompilieren
+### Option A – Vorcompiliertes Binary (empfohlen)
+
+Das Repository enthält ein fertig kompiliertes Binary für Linux/amd64:
 
 ```bash
 git clone <repository-url> postfix-relay-manager
 cd postfix-relay-manager
-go build -o postfix-relay-manager .
-```
-
-### 2. Installieren
-
-```bash
 sudo mkdir -p /opt/postfix-relay-manager
 sudo cp postfix-relay-manager /opt/postfix-relay-manager/
 sudo cp data.json.example /opt/postfix-relay-manager/data.json
 ```
 
-### 3. `data.json` konfigurieren
+### Option B – Selbst kompilieren
+
+```bash
+git clone <repository-url> postfix-relay-manager
+cd postfix-relay-manager
+go build -o postfix-relay-manager .
+sudo mkdir -p /opt/postfix-relay-manager
+sudo cp postfix-relay-manager /opt/postfix-relay-manager/
+sudo cp data.json.example /opt/postfix-relay-manager/data.json
+```
+
+---
+
+### `data.json` konfigurieren
 
 ```bash
 sudo nano /opt/postfix-relay-manager/data.json
@@ -63,7 +74,7 @@ Mindestens diese Felder unter `config` müssen gesetzt sein:
 echo -n 'MEIN_PASSWORT' | sha256sum | cut -d' ' -f1
 ```
 
-### 4. Systemd-Service einrichten
+### Systemd-Service einrichten
 
 ```bash
 sudo cp postfix-relay-manager.service /etc/systemd/system/
@@ -71,7 +82,7 @@ sudo systemctl daemon-reload
 sudo systemctl enable --now postfix-relay-manager
 ```
 
-### 5. Status prüfen
+### Status prüfen
 
 ```bash
 sudo systemctl status postfix-relay-manager
@@ -111,7 +122,9 @@ Der Postfix Relay Manager konfiguriert Postfix so, dass bei Ausfall eines Relay-
 
 3. Schlägt die Verbindung zum ersten Server fehl, versucht Postfix automatisch den nächsten A-Record — ohne Verzögerung und ohne manuelle Eingriffe.
 
-> **Wichtig:** Alle Server einer Gruppe müssen über denselben Port erreichbar sein.
+> **Wichtig:** Alle Server einer Gruppe müssen über denselben Port erreichbar sein, da Postfix den Port aus dem `relayhost`-Eintrag bezieht, nicht aus den einzelnen A-Records.
+
+Da Postfix seinen SMTP-Client in einem Chroot unter `/var/spool/postfix/` betreibt, schreibt der Manager den verwalteten Block zusätzlich nach `/var/spool/postfix/etc/hosts`.
 
 ---
 
@@ -122,21 +135,24 @@ Der Manager schreibt und aktualisiert folgende Dateien automatisch bei jeder Kon
 | Datei | Inhalt |
 |---|---|
 | `/etc/postfix/allowed_clients` | Zuordnung Client-IP → Relay-Transport (FILTER) |
-| `/etc/postfix/main.cf` | `mynetworks`, `relayhost`, `inet_interfaces` |
+| `/etc/postfix/main.cf` | `mynetworks`, `relayhost`, `inet_interfaces`, `inet_protocols`, `smtp_host_lookup` |
 | `/etc/hosts` | Failover-A-Records für `relay-int.prm` / `relay-ext.prm` |
+| `/var/spool/postfix/etc/hosts` | Kopie des obigen Blocks für den Postfix-Chroot |
 
 Nach jeder Änderung werden `postmap` und `systemctl reload postfix` automatisch ausgeführt.
 
-### Empfohlene `main.cf`-Einträge
+### Einmalige manuelle Anpassung in `main.cf`
 
-Diese Zeile muss einmalig manuell in `/etc/postfix/main.cf` eingetragen werden:
+Diese Zeile muss einmalig manuell in `/etc/postfix/main.cf` eingetragen werden (falls noch nicht vorhanden):
 
 ```
-smtpd_client_restrictions =
+smtpd_relay_restrictions =
+    permit_mynetworks
     check_client_access hash:/etc/postfix/allowed_clients
+    reject
 ```
 
-Die Systemprüfung weist darauf hin, falls dieser Eintrag fehlt.
+Die Systemprüfung weist darauf hin, falls der Verweis auf `allowed_clients` fehlt.
 
 ---
 
@@ -177,7 +193,7 @@ Die Systemprüfung weist darauf hin, falls dieser Eintrag fehlt.
 | `config.port` | `8080` | HTTP-Port der Weboberfläche |
 | `config.allowedClientsFile` | `/etc/postfix/allowed_clients` | Pfad zur allowed_clients-Datei |
 | `config.mainCfFile` | `/etc/postfix/main.cf` | Pfad zur main.cf |
-| `config.mailLogFile` | `/var/log/mail.log` | Pfad zum Mail-Log |
+| `config.mailLogFile` | `/var/log/mail.log` | Pfad zum Mail-Log (Fallback: journalctl) |
 
 ---
 
@@ -201,11 +217,13 @@ Die Seite **Systemprüfung** prüft automatisch:
 - Postfix installiert und Dienst aktiv
 - `postmap` verfügbar
 - `main.cf` lesbar und beschreibbar
-- `relayhost` konfiguriert (mit Hinweis auf aktiven Failover)
-- `inet_interfaces` nicht auf `loopback-only` beschränkt
+- `mynetworks` in `main.cf` vorhanden
 - `allowed_clients` in `main.cf` referenziert
-- TCP-Erreichbarkeit aller konfigurierten Relay-Server
 - sudo-Berechtigung für `postmap` / `systemctl reload`
+- `relayhost` konfiguriert (mit Hinweis auf aktiven Failover)
+- `smtp_host_lookup = native` gesetzt (erforderlich damit `/etc/hosts` aufgelöst wird)
+- `inet_interfaces` nicht auf `loopback-only` beschränkt
+- TCP-Erreichbarkeit aller konfigurierten Relay-Server
 
 ---
 
@@ -220,6 +238,7 @@ sudo rm -rf /opt/postfix-relay-manager
 
 # Verwalteten /etc/hosts-Block entfernen
 sudo sed -i '/# --- postfix-relay-manager begin ---/,/# --- postfix-relay-manager end ---/d' /etc/hosts
+sudo sed -i '/# --- postfix-relay-manager begin ---/,/# --- postfix-relay-manager end ---/d' /var/spool/postfix/etc/hosts
 
 # Postfix-Konfiguration bereinigen
 sudo postconf -e 'relayhost='
