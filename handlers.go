@@ -600,8 +600,13 @@ func handlePostfixPost(w http.ResponseWriter, r *http.Request) {
 		err = postfixPurge()
 		successMsg = "Alle Mails in der Warteschlange wurden gelöscht."
 	case "restart":
-		err = postfixRestart()
-		successMsg = "Postfix wurde neu gestartet."
+		appMu.Lock()
+		err = applyConfig()
+		appMu.Unlock()
+		if err == nil {
+			err = postfixRestart()
+		}
+		successMsg = "Konfiguration angewendet und Postfix neu gestartet."
 	default:
 		http.Error(w, "Unbekannte Aktion", http.StatusBadRequest)
 		return
