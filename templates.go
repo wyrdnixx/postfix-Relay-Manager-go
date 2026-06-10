@@ -153,12 +153,20 @@ func css() string {
     .modal-box .pre-label{font-size:.75rem;font-weight:600;color:#888;margin-bottom:4px}
     .modal-close{position:absolute;top:16px;right:20px;font-size:1.4rem;cursor:pointer;color:#aaa;line-height:1}
     .modal-close:hover{color:#333}
+    .queue-pill{display:inline-flex;align-items:center;gap:5px;padding:3px 11px;border-radius:12px;font-size:.75rem;font-weight:700;text-decoration:none;transition:opacity .15s}
+    .queue-pill:hover{opacity:.8}
+    .queue-pill-ok{background:rgba(46,125,50,.25);color:#a5d6a7}
+    .queue-pill-warn{background:rgba(230,81,0,.3);color:#ffcc80}
+    .queue-pill-err{background:rgba(198,40,40,.35);color:#ef9a9a}
+    .queue-pill-unknown{background:rgba(255,255,255,.1);color:#888}
+    .status-pre{background:#1a1a2e;color:#e2e8f0;padding:14px 16px;border-radius:6px;font-size:.8rem;overflow-x:auto;white-space:pre-wrap;word-break:break-all;font-family:'SFMono-Regular',Consolas,monospace;margin-top:6px}
   `
 }
 
 // ─── Gemeinsames Layout ───────────────────────────────────────────────────────
 
 func layout(title, body, flashHTML string) string {
+	queueBadge := queueNavBadge()
 	return fmt.Sprintf(`<!DOCTYPE html>
 <html lang="de">
 <head>
@@ -171,6 +179,7 @@ func layout(title, body, flashHTML string) string {
   <header>
     <h1>Postfix Relay Manager</h1>
     <nav>
+      %s
       <a href="/syscheck">Systemprüfung</a>
       <a href="/logs">Protokoll</a>
       <a href="/settings">Einstellungen</a>
@@ -182,7 +191,21 @@ func layout(title, body, flashHTML string) string {
     %s
   </main>
 </body>
-</html>`, esc(title), css(), flashHTML, body)
+</html>`, esc(title), css(), queueBadge, flashHTML, body)
+}
+
+func queueNavBadge() string {
+	n := postfixQueueSize()
+	switch {
+	case n < 0:
+		return `<a href="/postfix" class="queue-pill queue-pill-unknown" title="Warteschlange nicht lesbar">? Mails</a>`
+	case n == 0:
+		return `<a href="/postfix" class="queue-pill queue-pill-ok" title="Warteschlange leer">✓ Queue leer</a>`
+	case n < 10:
+		return fmt.Sprintf(`<a href="/postfix" class="queue-pill queue-pill-warn" title="Mails in Warteschlange">⚠ %d Mail(s)</a>`, n)
+	default:
+		return fmt.Sprintf(`<a href="/postfix" class="queue-pill queue-pill-err" title="Viele Mails in Warteschlange">✗ %d Mails</a>`, n)
+	}
 }
 
 func flashToHTML(f *Flash) string {
@@ -849,4 +872,79 @@ func sysCheckPage(results []CheckResult) string {
 </div>`, summaryHTML, rows.String())
 
 	return layout("Systemprüfung", body, "")
+}
+
+// ─── Postfix-Statusseite ──────────────────────────────────────────────────────
+
+type PostfixPageData struct {
+	QueueSize     int
+	QueueList     string
+	ServiceStatus string
+	Flash         *Flash
+}
+
+func postfixPage(d PostfixPageData) string {
+	queueClass := "badge-ok"
+	queueLabel := "Leer"
+	switch {
+	case d.QueueSize < 0:
+		queueClass = "badge-warn"
+		queueLabel = "Unbekannt"
+	case d.QueueSize == 0:
+		queueClass = "badge-ok"
+		queueLabel = "Leer"
+	case d.QueueSize < 10:
+		queueClass = "badge-warn"
+		queueLabel = fmt.Sprintf("%d Mail(s)", d.QueueSize)
+	default:
+		queueClass = "badge-ko"
+		queueLabel = fmt.Sprintf("%d Mails", d.QueueSize)
+	}
+
+	body := fmt.Sprintf(`
+<div class="card">
+  <div class="toolbar">
+    <h2>Postfix-Status &amp; Warteschlange</h2>
+    <form method="GET" action="/postfix">
+      <button type="submit" class="btn btn-ghost">Aktualisieren</button>
+    </form>
+  </div>
+
+  <div style="display:flex;gap:32px;margin-bottom:20px;flex-wrap:wrap;align-items:center">
+    <div>
+      <div style="font-size:.75rem;font-weight:600;color:#888;margin-bottom:4px;text-transform:uppercase;letter-spacing:.05em">Warteschlange</div>
+      <span class="badge %s" style="font-size:.9rem;padding:5px 14px">%s</span>
+    </div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-left:auto">
+      <form method="POST" action="/postfix" style="display:inline">
+        <input type="hidden" name="action" value="flush">
+        <button type="submit" class="btn btn-primary" title="Sofortige Zustellung aller Mails versuchen">Warteschlange leeren (flush)</button>
+      </form>
+      <form method="POST" action="/postfix" style="display:inline">
+        <input type="hidden" name="action" value="requeue">
+        <button type="submit" class="btn btn-warn" title="Zurückgestellte Mails erneut einreihen">Zurückgestellte neu einreihen</button>
+      </form>
+      <form method="POST" action="/postfix" style="display:inline" onsubmit="return confirm('Postfix wirklich neu starten?')">
+        <input type="hidden" name="action" value="restart">
+        <button type="submit" class="btn btn-danger">Postfix neu starten</button>
+      </form>
+    </div>
+  </div>
+</div>
+
+<div class="card">
+  <h2>Warteschlangen-Inhalt</h2>
+  <pre class="status-pre">%s</pre>
+</div>
+
+<div class="card">
+  <h2>Dienst-Status</h2>
+  <pre class="status-pre">%s</pre>
+</div>`,
+		queueClass, queueLabel,
+		esc(d.QueueList),
+		esc(d.ServiceStatus),
+	)
+
+	return layout("Postfix-Status", body, flashToHTML(d.Flash))
 }

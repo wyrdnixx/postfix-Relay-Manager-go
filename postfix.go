@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/exec"
 	"regexp"
+	"strconv"
 	"strings"
 )
 
@@ -112,6 +113,76 @@ func applyConfig() error {
 	out, err := exec.Command("sh", "-c", cmdStr).CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("postmap/reload fehlgeschlagen: %w\n%s", err, string(out))
+	}
+	return nil
+}
+
+// ─── Queue-Hilfsfunktionen ────────────────────────────────────────────────────
+
+var queueCountRe = regexp.MustCompile(`(\d+) Requests?\.`)
+
+// postfixQueueSize gibt die aktuelle Anzahl der Mails in der Warteschlange zurück.
+// Gibt -1 zurück wenn der Aufruf fehlschlägt.
+func postfixQueueSize() int {
+	out, err := exec.Command("postqueue", "-p").Output()
+	if err != nil {
+		return -1
+	}
+	s := string(out)
+	if strings.Contains(s, "Mail queue is empty") {
+		return 0
+	}
+	if m := queueCountRe.FindStringSubmatch(s); m != nil {
+		n, _ := strconv.Atoi(m[1])
+		return n
+	}
+	return -1
+}
+
+// postfixQueueList gibt die formatierte Warteschlange (postqueue -p) zurück.
+func postfixQueueList() string {
+	out, _ := exec.Command("postqueue", "-p").CombinedOutput()
+	return strings.TrimSpace(string(out))
+}
+
+// postfixServiceStatus gibt den aktuellen systemctl-Status von Postfix zurück.
+func postfixServiceStatus() string {
+	out, _ := exec.Command("systemctl", "status", "postfix", "--no-pager", "-l", "--lines=20").CombinedOutput()
+	return strings.TrimSpace(string(out))
+}
+
+// runPrivileged führt einen Befehl aus, mit sudo wenn der Prozess nicht als root läuft.
+func runPrivileged(args ...string) (string, error) {
+	if os.Getuid() != 0 {
+		args = append([]string{"sudo"}, args...)
+	}
+	out, err := exec.Command(args[0], args[1:]...).CombinedOutput()
+	return strings.TrimSpace(string(out)), err
+}
+
+// postfixFlush sendet alle Mails in der Warteschlange sofort.
+func postfixFlush() error {
+	out, err := runPrivileged("postqueue", "-f")
+	if err != nil {
+		return fmt.Errorf("postqueue -f: %w\n%s", err, out)
+	}
+	return nil
+}
+
+// postfixRequeue stellt alle zurückgestellten Mails wieder in die aktive Warteschlange.
+func postfixRequeue() error {
+	out, err := runPrivileged("postsuper", "-r", "ALL")
+	if err != nil {
+		return fmt.Errorf("postsuper -r ALL: %w\n%s", err, out)
+	}
+	return nil
+}
+
+// postfixRestart startet den Postfix-Dienst neu.
+func postfixRestart() error {
+	out, err := runPrivileged("systemctl", "restart", "postfix")
+	if err != nil {
+		return fmt.Errorf("systemctl restart postfix: %w\n%s", err, out)
 	}
 	return nil
 }

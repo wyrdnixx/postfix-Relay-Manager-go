@@ -571,3 +571,47 @@ func handleSysCheckGet(w http.ResponseWriter, _ *http.Request) {
 	results := runPostfixChecks()
 	writeHTML(w, sysCheckPage(results))
 }
+
+// ─── Postfix-Statusseite ──────────────────────────────────────────────────────
+
+func postfixPageData(flash *Flash) PostfixPageData {
+	return PostfixPageData{
+		QueueSize:     postfixQueueSize(),
+		QueueList:     postfixQueueList(),
+		ServiceStatus: postfixServiceStatus(),
+		Flash:         flash,
+	}
+}
+
+func handlePostfixGet(w http.ResponseWriter, _ *http.Request) {
+	writeHTML(w, postfixPage(postfixPageData(nil)))
+}
+
+func handlePostfixPost(w http.ResponseWriter, r *http.Request) {
+	action := r.FormValue("action")
+	var err error
+	var successMsg string
+
+	switch action {
+	case "flush":
+		err = postfixFlush()
+		successMsg = "Warteschlange wurde zur sofortigen Zustellung freigegeben."
+	case "requeue":
+		err = postfixRequeue()
+		successMsg = "Zurückgestellte Mails wurden erneut eingereiht."
+	case "restart":
+		err = postfixRestart()
+		successMsg = "Postfix wurde neu gestartet."
+	default:
+		http.Error(w, "Unbekannte Aktion", http.StatusBadRequest)
+		return
+	}
+
+	var flash *Flash
+	if err != nil {
+		flash = &Flash{Msg: "Fehler: " + err.Error(), Type: "err"}
+	} else {
+		flash = &Flash{Msg: successMsg, Type: "ok"}
+	}
+	writeHTML(w, postfixPage(postfixPageData(flash)))
+}
