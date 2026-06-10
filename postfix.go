@@ -9,19 +9,60 @@ import (
 	"strings"
 )
 
+// Synthetische Hostnamen für Failover-Auflösung via /etc/hosts.
+// Postfix probiert alle A-Records des Hostnamens der Reihe nach –
+// fällt Server 1 aus, wird automatisch Server 2 verwendet.
+const (
+	relayIntHost  = "relay-int.prm"
+	relayExtHost  = "relay-ext.prm"
+	hostsBegin    = "# --- postfix-relay-manager begin ---"
+	hostsEnd      = "# --- postfix-relay-manager end ---"
+	hostsFile     = "/etc/hosts"
+)
+
+var hostedSectionRe = regexp.MustCompile(`(?s)` + hostsBegin + `.*?` + hostsEnd + `\n?`)
+
+// manageHostsEntries schreibt die Relay-Server-IPs als A-Records in /etc/hosts,
+// damit Postfix bei Ausfall eines Servers automatisch den nächsten versucht.
+func manageHostsEntries() error {
+	b, err := os.ReadFile(hostsFile)
+	if err != nil {
+		return fmt.Errorf("hosts lesen: %w", err)
+	}
+	content := hostedSectionRe.ReplaceAllString(string(b), "")
+	content = strings.TrimRight(content, "\n") + "\n"
+
+	var section strings.Builder
+	fmt.Fprintln(&section, hostsBegin)
+	for _, srv := range relayServersInternal {
+		fmt.Fprintf(&section, "%s\t%s\n", srv.Host, relayIntHost)
+	}
+	for _, srv := range relayServersExternal {
+		fmt.Fprintf(&section, "%s\t%s\n", srv.Host, relayExtHost)
+	}
+	fmt.Fprintln(&section, hostsEnd)
+
+	return os.WriteFile(hostsFile, []byte(content+section.String()), 0644)
+}
+
 // buildAllowedClients erzeugt den Inhalt der allowed_clients-Datei.
+// Jeder registrierte Client bekommt einen FILTER-Eintrag, der auf den
+// synthetischen Hostnamen zeigt – Postfix erledigt das Failover via /etc/hosts.
 func buildAllowedClients(systems []System) string {
 	var sb strings.Builder
 	for _, s := range systems {
-		servers := relayServersInternal
+		host := relayIntHost
+		port := 25
+		if len(relayServersInternal) > 0 {
+			port = relayServersInternal[0].Port
+		}
 		if s.Type == "external" {
-			servers = relayServersExternal
+			host = relayExtHost
+			if len(relayServersExternal) > 0 {
+				port = relayServersExternal[0].Port
+			}
 		}
-		var parts []string
-		for _, srv := range servers {
-			parts = append(parts, fmt.Sprintf("smtp:[%s]:%d", srv.Host, srv.Port))
-		}
-		fmt.Fprintf(&sb, "%s FILTER %s\n", s.IP, strings.Join(parts, ","))
+		fmt.Fprintf(&sb, "%s FILTER smtp:[%s]:%d\n", s.IP, host, port)
 	}
 	return sb.String()
 }
@@ -30,13 +71,13 @@ var mynetworksRe = regexp.MustCompile(`(?m)^mynetworks\s*=\s*(.*)$`)
 var relayhostRe = regexp.MustCompile(`(?m)^relayhost\s*=\s*(.*)$`)
 var inetInterfacesRe = regexp.MustCompile(`(?m)^inet_interfaces\s*=\s*(.*)$`)
 
-// buildRelayhost gibt den primären Relayhost aus den internen Relay-Servern zurück.
+// buildRelayhost gibt den Relayhost-Wert zurück.
+// Durch den synthetischen Hostnamen probiert Postfix alle A-Records aus /etc/hosts.
 func buildRelayhost() string {
 	if len(relayServersInternal) == 0 {
 		return ""
 	}
-	srv := relayServersInternal[0]
-	return fmt.Sprintf("[%s]:%d", srv.Host, srv.Port)
+	return fmt.Sprintf("[%s]:%d", relayIntHost, relayServersInternal[0].Port)
 }
 
 // computeMynetworks berechnet den neuen mynetworks-Wert ohne Seiteneffekte.
@@ -123,6 +164,11 @@ func writeMainCf() error {
 // applyConfig schreibt die Postfix-Konfiguration und führt postmap + reload aus.
 // Muss mit appMu gehalten aufgerufen werden.
 func applyConfig() error {
+	// /etc/hosts mit synthetischen Relay-Hostnamen für Failover aktualisieren
+	if err := manageHostsEntries(); err != nil {
+		return fmt.Errorf("hosts schreiben: %w", err)
+	}
+
 	// allowed_clients schreiben
 	if err := os.WriteFile(allowedClientsFile, []byte(buildAllowedClients(appData.Systems)), 0644); err != nil {
 		return fmt.Errorf("allowed_clients schreiben: %w", err)

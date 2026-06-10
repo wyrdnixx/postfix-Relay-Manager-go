@@ -218,10 +218,15 @@ func runPostfixChecks() []CheckResult {
 					Detail:  "Ohne relayhost versucht Postfix, Mails direkt per MX-Lookup zuzustellen.\nBei Verwendung als Relay-Server muss relayhost auf den Upstream-Mailserver zeigen.\nBeispiel: relayhost = [10.100.0.35]:26",
 				})
 			} else {
+				detail := ""
+				if strings.Contains(val, relayIntHost) {
+					detail = fmt.Sprintf("Failover aktiv: Postfix probiert alle A-Records von %s der Reihe nach.", relayIntHost)
+				}
 				results = append(results, CheckResult{
 					Name:    "relayhost konfiguriert",
 					Status:  "ok",
 					Message: val,
+					Detail:  detail,
 				})
 			}
 		} else {
