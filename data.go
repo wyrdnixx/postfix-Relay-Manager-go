@@ -1,6 +1,8 @@
 package main
 
 import (
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -107,6 +109,30 @@ func saveData() error {
 		return err
 	}
 	return os.WriteFile(dataFilePath, b, 0644)
+}
+
+// newID erzeugt eine kryptografisch zufällige 8-Byte-ID als Hex-String.
+func newID() string {
+	b := make([]byte, 8)
+	rand.Read(b) //nolint:errcheck — rand.Read schlägt nur bei defektem OS-RNG fehl
+	return hex.EncodeToString(b)
+}
+
+// removeManagedIP entfernt ip aus AllManagedIPs, sofern kein verbleibendes
+// System diese IP noch verwendet. Muss mit appMu gehalten aufgerufen werden.
+func removeManagedIP(ip string, systems []System) {
+	for _, s := range systems {
+		if s.IP == ip {
+			return
+		}
+	}
+	filtered := make([]string, 0, len(appData.AllManagedIPs))
+	for _, existing := range appData.AllManagedIPs {
+		if existing != ip {
+			filtered = append(filtered, existing)
+		}
+	}
+	appData.AllManagedIPs = filtered
 }
 
 // copyRelayServers gibt thread-sichere Kopien der Relay-Server-Slices zurück.

@@ -5,17 +5,15 @@ import (
 	"encoding/json"
 	"fmt"
 	"html"
+	"net"
 	"net/http"
-	"regexp"
 	"strings"
 	"sync"
-	"time"
 )
 
 // ─── Passwort-Hash (thread-safe, zur Laufzeit änderbar) ──────────────────────
 
 var (
-	ipRegex        = regexp.MustCompile(`^(\d{1,3}\.){3}\d{1,3}(/\d{1,2})?$`)
 	passwordHashMu sync.RWMutex
 	passwordHash   string
 )
@@ -37,7 +35,13 @@ func setPasswordHash(h string) {
 	passwordHashMu.Unlock()
 }
 
-func isValidIP(ip string) bool { return ipRegex.MatchString(ip) }
+func isValidIP(s string) bool {
+	if strings.Contains(s, "/") {
+		_, _, err := net.ParseCIDR(s)
+		return err == nil
+	}
+	return net.ParseIP(s) != nil
+}
 
 func writeHTML(w http.ResponseWriter, content string) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
@@ -139,21 +143,23 @@ func handleAddPost(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	appData.Systems = append(appData.Systems, System{
-		ID:       fmt.Sprintf("%d", time.Now().UnixMilli()),
+		ID:       newID(),
 		Name:     name,
 		IP:       ip,
 		Type:     sysType,
 		Category: category,
 	})
 	addManagedIP(ip)
-	err := applyConfig()
-	_ = saveData()
+	applyErr := applyConfig()
+	saveErr := saveData()
 	appMu.Unlock()
 
 	_, sess := getSession(r)
 	if sess != nil {
-		if err != nil {
-			sess.setFlash(&Flash{"System gespeichert, aber Postfix-Reload fehlgeschlagen: " + err.Error(), "err"})
+		if applyErr != nil {
+			sess.setFlash(&Flash{"System gespeichert, aber Postfix-Reload fehlgeschlagen: " + applyErr.Error(), "err"})
+		} else if saveErr != nil {
+			sess.setFlash(&Flash{"Konfiguration angewendet, aber Daten nicht gespeichert: " + saveErr.Error(), "err"})
 		} else {
 			sess.setFlash(&Flash{fmt.Sprintf("System %s erfolgreich hinzugefügt. Postfix wurde neu geladen.", ip), "ok"})
 		}
@@ -223,14 +229,16 @@ func handleEditPost(w http.ResponseWriter, r *http.Request) {
 	}
 	appData.Systems[idx] = sys
 	addManagedIP(ip)
-	err := applyConfig()
-	_ = saveData()
+	applyErr := applyConfig()
+	saveErr := saveData()
 	appMu.Unlock()
 
 	_, sess := getSession(r)
 	if sess != nil {
-		if err != nil {
-			sess.setFlash(&Flash{"Gespeichert, aber Postfix-Reload fehlgeschlagen: " + err.Error(), "err"})
+		if applyErr != nil {
+			sess.setFlash(&Flash{"Gespeichert, aber Postfix-Reload fehlgeschlagen: " + applyErr.Error(), "err"})
+		} else if saveErr != nil {
+			sess.setFlash(&Flash{"Konfiguration angewendet, aber Daten nicht gespeichert: " + saveErr.Error(), "err"})
 		} else {
 			sess.setFlash(&Flash{fmt.Sprintf("System %s erfolgreich aktualisiert. Postfix wurde neu geladen.", ip), "ok"})
 		}
@@ -258,14 +266,17 @@ func handleDeletePost(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	appData.Systems = append(appData.Systems[:idx], appData.Systems[idx+1:]...)
-	err := applyConfig()
-	_ = saveData()
+	removeManagedIP(deletedIP, appData.Systems)
+	applyErr := applyConfig()
+	saveErr := saveData()
 	appMu.Unlock()
 
 	_, sess := getSession(r)
 	if sess != nil {
-		if err != nil {
-			sess.setFlash(&Flash{"Gelöscht, aber Postfix-Reload fehlgeschlagen: " + err.Error(), "err"})
+		if applyErr != nil {
+			sess.setFlash(&Flash{"Gelöscht, aber Postfix-Reload fehlgeschlagen: " + applyErr.Error(), "err"})
+		} else if saveErr != nil {
+			sess.setFlash(&Flash{"Konfiguration angewendet, aber Daten nicht gespeichert: " + saveErr.Error(), "err"})
 		} else {
 			sess.setFlash(&Flash{fmt.Sprintf("System %s erfolgreich entfernt. Postfix wurde neu geladen.", deletedIP), "ok"})
 		}
@@ -336,12 +347,16 @@ func handleSettingsPost(w http.ResponseWriter, r *http.Request) {
 		appData.Config = &AppConfig{}
 	}
 	appData.Config.AdminPasswordHash = newHash
-	_ = saveData()
+	saveErr := saveData()
 	appMu.Unlock()
 
 	_, sess := getSession(r)
 	if sess != nil {
-		sess.setFlash(&Flash{"Passwort erfolgreich geändert.", "ok"})
+		if saveErr != nil {
+			sess.setFlash(&Flash{"Fehler beim Speichern: " + saveErr.Error(), "err"})
+		} else {
+			sess.setFlash(&Flash{"Passwort erfolgreich geändert.", "ok"})
+		}
 	}
 	http.Redirect(w, r, "/settings", http.StatusFound)
 }
@@ -402,12 +417,16 @@ func handleSettingsRelayPost(w http.ResponseWriter, r *http.Request) {
 	}
 	appData.Config.RelayServersInternal = intSrvs
 	appData.Config.RelayServersExternal = extSrvs
-	_ = saveData()
+	saveErr := saveData()
 	applyErr := applyConfig()
 	appMu.Unlock()
 
 	if applyErr != nil {
 		writeHTML(w, settingsPage(&Flash{Msg: "Gespeichert, aber Postfix-Reload fehlgeschlagen: " + applyErr.Error(), Type: "err"}, intSrvs, extSrvs))
+		return
+	}
+	if saveErr != nil {
+		writeHTML(w, settingsPage(&Flash{Msg: "Konfiguration angewendet, aber Daten nicht gespeichert: " + saveErr.Error(), Type: "err"}, intSrvs, extSrvs))
 		return
 	}
 
@@ -560,6 +579,10 @@ func handleBulkAddPost(w http.ResponseWriter, r *http.Request) {
 	raw := r.FormValue("ips")
 	name := strings.TrimSpace(r.FormValue("name"))
 	sysType := r.FormValue("type")
+	if sysType != "internal" && sysType != "external" {
+		writeHTML(w, bulkAddPage("Bitte einen gültigen Versandtyp angeben (intern oder extern)."))
+		return
+	}
 	category := r.FormValue("category")
 	if !validCategories[category] {
 		category = "other"
@@ -603,15 +626,14 @@ func handleBulkAddPost(w http.ResponseWriter, r *http.Request) {
 		existingIPs[s.IP] = true
 	}
 
-	now := time.Now().UnixMilli()
 	var added, skipped []string
-	for i, ip := range valid {
+	for _, ip := range valid {
 		if existingIPs[ip] {
 			skipped = append(skipped, ip)
 			continue
 		}
 		appData.Systems = append(appData.Systems, System{
-			ID:       fmt.Sprintf("%d", now+int64(i)),
+			ID:       newID(),
 			Name:     name,
 			IP:       ip,
 			Type:     sysType,
@@ -624,8 +646,13 @@ func handleBulkAddPost(w http.ResponseWriter, r *http.Request) {
 
 	result := &BulkResult{Added: added, Skipped: skipped, Invalid: invalid}
 	if len(added) > 0 {
-		result.ApplyErr = applyConfig()
-		_ = saveData()
+		applyErr := applyConfig()
+		saveErr := saveData()
+		if applyErr != nil {
+			result.ApplyErr = applyErr
+		} else if saveErr != nil {
+			result.ApplyErr = fmt.Errorf("Daten nicht gespeichert: %w", saveErr)
+		}
 	}
 	appMu.Unlock()
 
