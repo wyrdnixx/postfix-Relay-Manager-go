@@ -32,6 +32,75 @@ var denyRe = regexp.MustCompile(
 	`NOQUEUE: reject: RCPT from \S+\[(\d{1,3}(?:\.\d{1,3}){3})\]: \S+ \S+ ([^:]+): Relay access denied`,
 )
 
+// Regex: Zustellstatus-Zeilen aus mail.log
+var mailStatusRe = regexp.MustCompile(
+	`postfix/smtp\[\d+\]: ([0-9A-F]+): to=<([^>]+)>, relay=(\S+), delay=([\d.]+), .*?status=(sent|deferred|bounced|returned)\s+\(([^)]{0,200})`,
+)
+
+// MailLogEntry repräsentiert einen Zustellvorgang aus dem Mail-Log.
+type MailLogEntry struct {
+	Time      time.Time `json:"-"`
+	TimeStr   string    `json:"timeStr"`
+	QueueID   string    `json:"queueId"`
+	Recipient string    `json:"recipient"`
+	Relay     string    `json:"relay"`
+	Delay     string    `json:"delay"`
+	Status    string    `json:"status"`
+	StatusMsg string    `json:"statusMsg"`
+}
+
+var (
+	mailLogCache   []MailLogEntry
+	mailLogCacheAt time.Time
+	mailLogCacheMu sync.Mutex
+)
+
+// getMailLog liest und parst Zustelleinträge aus dem Mail-Log, gecacht für 30s.
+func getMailLog() []MailLogEntry {
+	mailLogCacheMu.Lock()
+	defer mailLogCacheMu.Unlock()
+
+	if time.Since(mailLogCacheAt) < 30*time.Second && mailLogCache != nil {
+		return mailLogCache
+	}
+
+	lines := readLogLines()
+	year := time.Now().Year()
+	var entries []MailLogEntry
+
+	for _, line := range lines {
+		if !strings.Contains(line, "status=") {
+			continue
+		}
+		m := mailStatusRe.FindStringSubmatch(line)
+		if m == nil {
+			continue
+		}
+		t := parseLogTime(line, year)
+		entries = append(entries, MailLogEntry{
+			Time:      t,
+			TimeStr:   fmtTime(t),
+			QueueID:   m[1],
+			Recipient: m[2],
+			Relay:     m[3],
+			Delay:     m[4] + "s",
+			Status:    m[5],
+			StatusMsg: m[6],
+		})
+	}
+
+	sort.Slice(entries, func(i, j int) bool {
+		return entries[i].Time.After(entries[j].Time)
+	})
+	if len(entries) > 200 {
+		entries = entries[:200]
+	}
+
+	mailLogCache = entries
+	mailLogCacheAt = time.Now()
+	return entries
+}
+
 // Timestamp-Formate
 var (
 	isoTimeRe = regexp.MustCompile(`^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})`)

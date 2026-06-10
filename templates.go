@@ -566,68 +566,132 @@ async function showPreview() {
 
 // ─── Protokoll-Seite ──────────────────────────────────────────────────────────
 
-func logsPage(entries []LogEntry) string {
-	var rows strings.Builder
-	if len(entries) == 0 {
-		rows.WriteString(`<tr><td colspan="4" class="empty">Keine unbekannten abgelehnten Verbindungen gefunden.</td></tr>`)
+func logsPage(denied []LogEntry, mails []MailLogEntry) string {
+	// Tab 1: abgelehnte Versuche
+	var deniedRows strings.Builder
+	if len(denied) == 0 {
+		deniedRows.WriteString(`<tr><td colspan="4" class="empty">Keine unbekannten abgelehnten Verbindungen gefunden.</td></tr>`)
 	} else {
-		for _, e := range entries {
-			fmt.Fprintf(&rows,
-				`<tr>
-        <td style="white-space:nowrap">%s</td>
-        <td><code>%s</code></td>
-        <td>%s</td>
-        <td><a href="%s" class="btn btn-primary" style="font-size:.78rem;padding:4px 10px">Hinzufügen</a></td>
-      </tr>`,
-				esc(e.TimeStr),
-				esc(e.IP),
-				esc(e.Recipient),
+		for _, e := range denied {
+			fmt.Fprintf(&deniedRows,
+				`<tr><td style="white-space:nowrap">%s</td><td><code>%s</code></td><td>%s</td>`+
+					`<td><a href="%s" class="btn btn-primary" style="font-size:.78rem;padding:4px 10px">Hinzufügen</a></td></tr>`,
+				esc(e.TimeStr), esc(e.IP), esc(e.Recipient),
 				"/add?ip="+url.QueryEscape(e.IP),
 			)
 		}
 	}
 
+	// Tab 2: Mail-Protokoll
+	statusBadge := map[string]string{
+		"sent": "badge-ok", "deferred": "badge-warn",
+		"bounced": "badge-ko", "returned": "badge-ko",
+	}
+	var mailRows strings.Builder
+	if len(mails) == 0 {
+		mailRows.WriteString(`<tr><td colspan="6" class="empty">Keine Zustelleinträge gefunden.</td></tr>`)
+	} else {
+		for _, e := range mails {
+			badge := statusBadge[e.Status]
+			if badge == "" {
+				badge = "badge-warn"
+			}
+			fmt.Fprintf(&mailRows,
+				`<tr>`+
+					`<td style="white-space:nowrap">%s</td>`+
+					`<td><code style="font-size:.78rem">%s</code></td>`+
+					`<td>%s</td>`+
+					`<td style="font-size:.82rem;color:#666">%s</td>`+
+					`<td style="white-space:nowrap">%s</td>`+
+					`<td><span class="badge %s">%s</span></td>`+
+					`</tr>`,
+				esc(e.TimeStr), esc(e.QueueID), esc(e.Recipient),
+				esc(e.Relay), esc(e.Delay), badge, esc(e.Status),
+			)
+		}
+	}
+
 	body := fmt.Sprintf(`
-<div class="card">
-  <div class="toolbar">
-    <h2>Abgelehnte Relay-Versuche <span style="font-weight:400;color:#aaa">(letzte 200, nur unbekannte IPs)</span></h2>
-    <div style="display:flex;gap:12px;align-items:center">
-      <span id="countdown" style="font-size:.8rem;color:#aaa"></span>
-      <a href="/" class="btn btn-ghost">Zur Übersicht</a>
+<style>
+.tabs{display:flex;gap:0;margin-bottom:-1px;position:relative;z-index:1}
+.tab-btn{padding:9px 20px;border:1px solid #e0e0e0;border-bottom:none;border-radius:6px 6px 0 0;background:#f7f8fa;cursor:pointer;font-size:.85rem;font-weight:500;color:#666;transition:all .15s}
+.tab-btn.active{background:#fff;color:#1a1a2e;border-color:#e0e0e0;border-bottom-color:#fff}
+.tab-btn:hover:not(.active){background:#eff0f2}
+.tab-panel{display:none}.tab-panel.active{display:block}
+</style>
+<div class="tabs">
+  <button class="tab-btn active" onclick="showTab('denied',this)">Abgelehnte Versuche</button>
+  <button class="tab-btn" onclick="showTab('mail',this)">Mail-Protokoll</button>
+</div>
+<div class="card" style="border-radius:0 8px 8px 8px">
+
+  <div id="tab-denied" class="tab-panel active">
+    <div class="toolbar" style="margin-bottom:12px">
+      <span style="font-size:.85rem;font-weight:600">Abgelehnte Relay-Versuche <span style="font-weight:400;color:#aaa">(letzte 200, nur unbekannte IPs)</span></span>
+      <span id="cd-denied" style="font-size:.8rem;color:#aaa"></span>
     </div>
+    <table>
+      <thead><tr><th>Zeitpunkt</th><th>IP-Adresse</th><th>Empfänger</th><th></th></tr></thead>
+      <tbody id="denied-tbody">%s</tbody>
+    </table>
   </div>
-  <table>
-    <thead>
-      <tr><th>Zeitpunkt</th><th>IP-Adresse</th><th>Empfänger</th><th></th></tr>
-    </thead>
-    <tbody id="log-tbody">%s</tbody>
-  </table>
+
+  <div id="tab-mail" class="tab-panel">
+    <div class="toolbar" style="margin-bottom:12px">
+      <span style="font-size:.85rem;font-weight:600">Zustellprotokoll <span style="font-weight:400;color:#aaa">(letzte 200)</span></span>
+      <span id="cd-mail" style="font-size:.8rem;color:#aaa"></span>
+    </div>
+    <table>
+      <thead><tr><th>Zeitpunkt</th><th>Queue-ID</th><th>Empfänger</th><th>Relay</th><th>Dauer</th><th>Status</th></tr></thead>
+      <tbody id="mail-tbody">%s</tbody>
+    </table>
+  </div>
+
 </div>
 <script>
-function renderRows(entries) {
+function showTab(name, btn) {
+  document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+  document.getElementById('tab-' + name).classList.add('active');
+  btn.classList.add('active');
+}
+function renderDenied(entries) {
   if (!entries || !entries.length)
     return '<tr><td colspan="4" class="empty">Keine unbekannten abgelehnten Verbindungen.</td></tr>';
   return entries.map(d =>
     '<tr><td style="white-space:nowrap">' + d.timeStr + '</td>' +
-    '<td><code>' + d.ip + '</code></td>' +
-    '<td>' + d.recipient + '</td>' +
+    '<td><code>' + d.ip + '</code></td><td>' + d.recipient + '</td>' +
     '<td><a href="' + d.addUrl + '" class="btn btn-primary" style="font-size:.78rem;padding:4px 10px">Hinzufügen</a></td></tr>'
   ).join('');
 }
-function refresh() {
-  fetch('/api/logs').then(r => r.json())
-    .then(d => { document.getElementById('log-tbody').innerHTML = renderRows(d); })
-    .catch(() => {});
+var statusBadge = {sent:'badge-ok',deferred:'badge-warn',bounced:'badge-ko',returned:'badge-ko'};
+function renderMail(entries) {
+  if (!entries || !entries.length)
+    return '<tr><td colspan="6" class="empty">Keine Zustelleinträge gefunden.</td></tr>';
+  return entries.map(d => {
+    var b = statusBadge[d.status] || 'badge-warn';
+    return '<tr><td style="white-space:nowrap">' + d.timeStr + '</td>' +
+      '<td><code style="font-size:.78rem">' + d.queueId + '</code></td>' +
+      '<td>' + d.recipient + '</td><td style="font-size:.82rem;color:#666">' + d.relay + '</td>' +
+      '<td style="white-space:nowrap">' + d.delay + '</td>' +
+      '<td><span class="badge ' + b + '">' + d.status + '</span></td></tr>';
+  }).join('');
 }
-let secs = 60;
-const cdEl = document.getElementById('countdown');
-setInterval(() => {
-  secs--;
-  if (secs <= 0) { secs = 60; refresh(); }
-  cdEl.textContent = 'Aktualisierung in ' + secs + ' s';
-}, 1000);
-cdEl.textContent = 'Aktualisierung in ' + secs + ' s';
-</script>`, rows.String())
+function startTimer(elId, seconds, refreshFn) {
+  var el = document.getElementById(elId), s = seconds;
+  el.textContent = 'Aktualisierung in ' + s + ' s';
+  setInterval(function() {
+    s--; if (s <= 0) { s = seconds; refreshFn(); }
+    el.textContent = 'Aktualisierung in ' + s + ' s';
+  }, 1000);
+}
+startTimer('cd-denied', 60, function() {
+  fetch('/api/logs').then(r=>r.json()).then(d=>{ document.getElementById('denied-tbody').innerHTML=renderDenied(d); }).catch(()=>{});
+});
+startTimer('cd-mail', 30, function() {
+  fetch('/api/maillog').then(r=>r.json()).then(d=>{ document.getElementById('mail-tbody').innerHTML=renderMail(d); }).catch(()=>{});
+});
+</script>`, deniedRows.String(), mailRows.String())
 
 	return layout("Protokoll", body, "")
 }

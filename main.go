@@ -57,6 +57,7 @@ func main() {
 	// APIs
 	mux.HandleFunc("GET /api/health", authMiddleware(handleApiHealth))
 	mux.HandleFunc("GET /api/logs", authMiddleware(handleApiLogs))
+	mux.HandleFunc("GET /api/maillog", authMiddleware(handleApiMailLog))
 	mux.HandleFunc("POST /api/preview", authMiddleware(handleApiPreview))
 	mux.HandleFunc("GET /api/resolve", authMiddleware(handleApiResolve))
 

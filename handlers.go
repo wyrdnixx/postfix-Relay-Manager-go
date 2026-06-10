@@ -290,7 +290,7 @@ func handleLogsPage(w http.ResponseWriter, r *http.Request) {
 			filtered = append(filtered, e)
 		}
 	}
-	writeHTML(w, logsPage(filtered))
+	writeHTML(w, logsPage(filtered, getMailLog()))
 }
 
 // ─── Einstellungen ────────────────────────────────────────────────────────────
@@ -443,6 +443,11 @@ func handleApiLogs(w http.ResponseWriter, _ *http.Request) {
 	}
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(filtered)
+}
+
+func handleApiMailLog(w http.ResponseWriter, _ *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(getMailLog())
 }
 
 // handleApiPreview berechnet, wie allowed_clients und mynetworks nach dem
