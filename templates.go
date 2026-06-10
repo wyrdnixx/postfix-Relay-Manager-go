@@ -177,7 +177,7 @@ func layout(title, body, flashHTML string) string {
 </head>
 <body>
   <header>
-    <h1>Postfix Relay Manager</h1>
+    <h1><a href="/" style="color:inherit;text-decoration:none">Postfix Relay Manager</a></h1>
     <nav>
       %s
       <a href="/syscheck">Systemprüfung</a>
