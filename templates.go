@@ -113,6 +113,7 @@ func css() string {
     .badge-e{background:#fce4ec;color:#c62828}
     .badge-ok{background:#e8f5e9;color:#2e7d32}
     .badge-ko{background:#ffebee;color:#c62828}
+    .badge-warn{background:#fff8e1;color:#e65100}
     .badge-cat-printer{background:#fff7ed;color:#c2410c}
     .badge-cat-server{background:#eff6ff;color:#1d4ed8}
     .badge-cat-scanner{background:#f0fdf4;color:#15803d}
@@ -170,6 +171,7 @@ func layout(title, body, flashHTML string) string {
   <header>
     <h1>Postfix Relay Manager</h1>
     <nav>
+      <a href="/syscheck">Systemprüfung</a>
       <a href="/logs">Protokoll</a>
       <a href="/settings">Einstellungen</a>
       <a href="/logout">Abmelden</a>
@@ -761,4 +763,90 @@ func settingsPage(flash *Flash) string {
   </ul>
 </div>`
 	return layout("Einstellungen", body, flashToHTML(flash))
+}
+
+// ─── Systemprüfungs-Seite ─────────────────────────────────────────────────────
+
+func sysCheckPage(results []CheckResult) string {
+	statusIcon := map[string]string{
+		"ok":   "✓",
+		"warn": "⚠",
+		"err":  "✗",
+	}
+	statusBadge := map[string]string{
+		"ok":   "badge-ok",
+		"warn": "badge-warn",
+		"err":  "badge-ko",
+	}
+	statusLabel := map[string]string{
+		"ok":   "OK",
+		"warn": "Warnung",
+		"err":  "Fehler",
+	}
+
+	allOK := true
+	for _, r := range results {
+		if r.Status != "ok" {
+			allOK = false
+			break
+		}
+	}
+
+	var rows strings.Builder
+	for _, r := range results {
+		icon := statusIcon[r.Status]
+		badge := statusBadge[r.Status]
+		label := statusLabel[r.Status]
+
+		detailHTML := ""
+		if r.Detail != "" {
+			detailHTML = fmt.Sprintf(
+				`<div style="margin-top:6px;font-size:.82rem;color:#666;background:#f7f8fa;border-radius:5px;padding:8px 12px;white-space:pre-wrap;font-family:'SFMono-Regular',Consolas,monospace">%s</div>`,
+				esc(r.Detail),
+			)
+		}
+
+		fmt.Fprintf(&rows,
+			`<tr>
+      <td style="white-space:nowrap;font-weight:500">%s</td>
+      <td><span class="badge %s" style="min-width:70px;text-align:center">%s %s</span></td>
+      <td>
+        <code>%s</code>
+        %s
+      </td>
+    </tr>`,
+			esc(r.Name),
+			badge, icon, label,
+			esc(r.Message),
+			detailHTML,
+		)
+	}
+
+	summaryHTML := `<div class="alert alert-ok" style="margin-bottom:20px">Alle Prüfungen bestanden – Postfix ist korrekt konfiguriert.</div>`
+	if !allOK {
+		summaryHTML = `<div class="alert alert-err" style="margin-bottom:20px">Einige Prüfungen schlugen fehl. Beheben Sie die markierten Probleme, bevor Sie den Relay Manager verwenden.</div>`
+	}
+
+	body := fmt.Sprintf(`
+<div class="card">
+  <div class="toolbar">
+    <h2>Systemprüfung</h2>
+    <form method="GET" action="/syscheck">
+      <button type="submit" class="btn btn-ghost">Erneut prüfen</button>
+    </form>
+  </div>
+  %s
+  <table>
+    <thead>
+      <tr>
+        <th style="width:220px">Prüfung</th>
+        <th style="width:110px">Status</th>
+        <th>Detail / Hinweis</th>
+      </tr>
+    </thead>
+    <tbody>%s</tbody>
+  </table>
+</div>`, summaryHTML, rows.String())
+
+	return layout("Systemprüfung", body, "")
 }

@@ -48,6 +48,7 @@ func main() {
 	mux.HandleFunc("GET /settings", authMiddleware(handleSettingsGet))
 	mux.HandleFunc("POST /settings", authMiddleware(handleSettingsPost))
 	mux.HandleFunc("GET /bulk-add", authMiddleware(handleBulkAddGet))
+	mux.HandleFunc("GET /syscheck", authMiddleware(handleSysCheckGet))
 	mux.HandleFunc("POST /bulk-add", authMiddleware(handleBulkAddPost))
 
 	// APIs

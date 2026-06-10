@@ -564,3 +564,10 @@ func handleBulkAddPost(w http.ResponseWriter, r *http.Request) {
 	// Ansonsten Detailseite zeigen
 	writeHTML(w, bulkResultPage(result))
 }
+
+// ─── Systemprüfung ────────────────────────────────────────────────────────────
+
+func handleSysCheckGet(w http.ResponseWriter, _ *http.Request) {
+	results := runPostfixChecks()
+	writeHTML(w, sysCheckPage(results))
+}
