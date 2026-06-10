@@ -300,8 +300,11 @@ func runPostfixChecks() []CheckResult {
 		}
 	}
 
+	// 13+14. Relay-Server erreichbar? (thread-sichere Kopie der Globals)
+	intSrvs, extSrvs := copyRelayServers()
+
 	// 13. Interne Relay-Server erreichbar?
-	for _, srv := range relayServersInternal {
+	for _, srv := range intSrvs {
 		addr := fmt.Sprintf("%s:%d", srv.Host, srv.Port)
 		conn, err := net.DialTimeout("tcp", addr, 3*time.Second)
 		if err != nil {
@@ -322,7 +325,7 @@ func runPostfixChecks() []CheckResult {
 	}
 
 	// 14. Externe Relay-Server erreichbar?
-	for _, srv := range relayServersExternal {
+	for _, srv := range extSrvs {
 		addr := fmt.Sprintf("%s:%d", srv.Host, srv.Port)
 		conn, err := net.DialTimeout("tcp", addr, 3*time.Second)
 		if err != nil {

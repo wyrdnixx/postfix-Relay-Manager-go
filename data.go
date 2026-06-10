@@ -109,6 +109,15 @@ func saveData() error {
 	return os.WriteFile(dataFilePath, b, 0644)
 }
 
+// copyRelayServers gibt thread-sichere Kopien der Relay-Server-Slices zurück.
+func copyRelayServers() (internal, external []RelayServer) {
+	appMu.Lock()
+	defer appMu.Unlock()
+	internal = append([]RelayServer{}, relayServersInternal...)
+	external = append([]RelayServer{}, relayServersExternal...)
+	return
+}
+
 // addManagedIP fügt ip zu AllManagedIPs hinzu, sofern noch nicht vorhanden.
 // Muss mit appMu gehalten aufgerufen werden.
 func addManagedIP(ip string) {

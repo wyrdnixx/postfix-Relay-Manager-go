@@ -203,15 +203,12 @@ func applyConfig() error {
 		return fmt.Errorf("main.cf schreiben: %w", err)
 	}
 
-	// postmap und Postfix-Reload
-	sudo := ""
-	if os.Getuid() != 0 {
-		sudo = "sudo "
+	// postmap und Postfix-Reload (ohne sh -c, damit allowedClientsFile nicht als Shell-Code interpretiert werden kann)
+	if out, err := runPrivileged("postmap", allowedClientsFile); err != nil {
+		return fmt.Errorf("postmap fehlgeschlagen: %w\n%s", err, out)
 	}
-	cmdStr := fmt.Sprintf("%spostmap %s && %ssystemctl reload postfix", sudo, allowedClientsFile, sudo)
-	out, err := exec.Command("sh", "-c", cmdStr).CombinedOutput()
-	if err != nil {
-		return fmt.Errorf("postmap/reload fehlgeschlagen: %w\n%s", err, string(out))
+	if out, err := runPrivileged("systemctl", "reload", "postfix"); err != nil {
+		return fmt.Errorf("reload fehlgeschlagen: %w\n%s", err, out)
 	}
 	return nil
 }
@@ -284,6 +281,9 @@ func postfixPurge() error {
 
 // postfixSendTestMail sendet eine Test-Mail über den lokalen Postfix.
 func postfixSendTestMail(to string) error {
+	if strings.ContainsAny(to, "\r\n") || !strings.Contains(to, "@") {
+		return fmt.Errorf("ungültige Empfängeradresse")
+	}
 	msg := fmt.Sprintf("From: relay-manager@localhost\r\nTo: %s\r\nSubject: Postfix Relay Manager – Test-Mail\r\n\r\nDiese Test-Mail wurde vom Postfix Relay Manager gesendet.\r\n", to)
 	cmd := exec.Command("sendmail", "-t")
 	cmd.Stdin = strings.NewReader(msg)

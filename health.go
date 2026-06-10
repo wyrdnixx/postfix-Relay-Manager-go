@@ -65,16 +65,17 @@ func checkRelayHealth() []HealthResult {
 		label  string
 	}
 
+	intSrvs, extSrvs := copyRelayServers()
 	seen := make(map[string]bool)
 	var tasks []task
-	for _, srv := range relayServersInternal {
+	for _, srv := range intSrvs {
 		key := fmt.Sprintf("%s:%d", srv.Host, srv.Port)
 		if !seen[key] {
 			seen[key] = true
 			tasks = append(tasks, task{srv.Host, srv.Port, "Intern"})
 		}
 	}
-	for _, srv := range relayServersExternal {
+	for _, srv := range extSrvs {
 		key := fmt.Sprintf("%s:%d", srv.Host, srv.Port)
 		if !seen[key] {
 			seen[key] = true

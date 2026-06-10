@@ -372,13 +372,14 @@ func indexPage(systems []System, flash *Flash) string {
 </div>
 
 <script>
+function esc(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');}
 // ── Health ──
 fetch('/api/health')
   .then(r => r.json())
   .then(health => {
     document.getElementById('health-body').innerHTML = health.map(h =>
-      '<tr><td><code>' + h.server + '</code></td>' +
-      '<td>Port ' + h.port + ' (' + h.label + ')</td>' +
+      '<tr><td><code>' + esc(h.server) + '</code></td>' +
+      '<td>Port ' + esc(h.port) + ' (' + esc(h.label) + ')</td>' +
       '<td><span class="badge ' + (h.ok ? 'badge-ok' : 'badge-ko') + '">' +
       (h.ok ? 'Erreichbar' : 'Nicht erreichbar') + '</span></td></tr>'
     ).join('');
@@ -654,6 +655,7 @@ func logsPage(denied []LogEntry, mails []MailLogEntry) string {
 
 </div>
 <script>
+function esc(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');}
 function showTab(name, btn) {
   document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
   document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
@@ -664,9 +666,9 @@ function renderDenied(entries) {
   if (!entries || !entries.length)
     return '<tr><td colspan="4" class="empty">Keine unbekannten abgelehnten Verbindungen.</td></tr>';
   return entries.map(d =>
-    '<tr><td style="white-space:nowrap">' + d.timeStr + '</td>' +
-    '<td><code>' + d.ip + '</code></td><td>' + d.recipient + '</td>' +
-    '<td><a href="' + d.addUrl + '" class="btn btn-primary" style="font-size:.78rem;padding:4px 10px">Hinzufügen</a></td></tr>'
+    '<tr><td style="white-space:nowrap">' + esc(d.timeStr) + '</td>' +
+    '<td><code>' + esc(d.ip) + '</code></td><td>' + esc(d.recipient) + '</td>' +
+    '<td><a href="' + esc(d.addUrl) + '" class="btn btn-primary" style="font-size:.78rem;padding:4px 10px">Hinzufügen</a></td></tr>'
   ).join('');
 }
 var statusBadge = {sent:'badge-ok',deferred:'badge-warn',bounced:'badge-ko',returned:'badge-ko'};
@@ -675,14 +677,14 @@ function renderMail(entries) {
     return '<tr><td colspan="6" class="empty">Keine Zustelleinträge gefunden.</td></tr>';
   return entries.map(d => {
     var b = statusBadge[d.status] || 'badge-warn';
-    var ip = d.clientIp ? '<code>' + d.clientIp + '</code>' : '<span style="color:#aaa">–</span>';
-    return '<tr><td style="white-space:nowrap">' + d.timeStr + '</td>' +
-      '<td><code style="font-size:.78rem">' + d.queueId + '</code></td>' +
-      '<td>' + d.recipient + '</td>' +
+    var ip = d.clientIp ? '<code>' + esc(d.clientIp) + '</code>' : '<span style="color:#aaa">–</span>';
+    return '<tr><td style="white-space:nowrap">' + esc(d.timeStr) + '</td>' +
+      '<td><code style="font-size:.78rem">' + esc(d.queueId) + '</code></td>' +
+      '<td>' + esc(d.recipient) + '</td>' +
       '<td>' + ip + '</td>' +
-      '<td style="font-size:.82rem;color:#666">' + d.relay + '</td>' +
-      '<td style="white-space:nowrap">' + d.delay + '</td>' +
-      '<td><span class="badge ' + b + '">' + d.status + '</span></td></tr>';
+      '<td style="font-size:.82rem;color:#666">' + esc(d.relay) + '</td>' +
+      '<td style="white-space:nowrap">' + esc(d.delay) + '</td>' +
+      '<td><span class="badge ' + b + '">' + esc(d.status) + '</span></td></tr>';
   }).join('');
 }
 function startTimer(elId, seconds, refreshFn) {
