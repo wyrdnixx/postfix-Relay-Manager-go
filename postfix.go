@@ -212,6 +212,18 @@ func postfixPurge() error {
 	return nil
 }
 
+// postfixSendTestMail sendet eine Test-Mail über den lokalen Postfix.
+func postfixSendTestMail(to string) error {
+	msg := fmt.Sprintf("From: relay-manager@localhost\r\nTo: %s\r\nSubject: Postfix Relay Manager – Test-Mail\r\n\r\nDiese Test-Mail wurde vom Postfix Relay Manager gesendet.\r\n", to)
+	cmd := exec.Command("sendmail", "-t")
+	cmd.Stdin = strings.NewReader(msg)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("sendmail: %w\n%s", err, string(out))
+	}
+	return nil
+}
+
 // postfixRestart startet den Postfix-Dienst neu.
 func postfixRestart() error {
 	out, err := runPrivileged("systemctl", "restart", "postfix")

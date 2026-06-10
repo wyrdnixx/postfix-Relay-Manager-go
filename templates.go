@@ -933,6 +933,15 @@ func postfixPage(d PostfixPageData) string {
 </div>
 
 <div class="card">
+  <h2>Test-Mail senden</h2>
+  <form method="POST" action="/postfix" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+    <input type="hidden" name="action" value="testmail">
+    <input type="text" name="to" placeholder="empfaenger@example.com" style="width:280px;margin-bottom:0">
+    <button type="submit" class="btn btn-primary">Test-Mail senden</button>
+  </form>
+</div>
+
+<div class="card">
   <h2>Warteschlangen-Inhalt</h2>
   <pre class="status-pre">%s</pre>
 </div>

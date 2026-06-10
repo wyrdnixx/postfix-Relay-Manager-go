@@ -593,6 +593,15 @@ func handlePostfixPost(w http.ResponseWriter, r *http.Request) {
 	var successMsg string
 
 	switch action {
+	case "testmail":
+		to := strings.TrimSpace(r.FormValue("to"))
+		if to == "" {
+			flash := &Flash{Msg: "Bitte eine Empfänger-Adresse angeben.", Type: "err"}
+			writeHTML(w, postfixPage(postfixPageData(flash)))
+			return
+		}
+		err = postfixSendTestMail(to)
+		successMsg = fmt.Sprintf("Test-Mail an %s wurde eingereiht.", html.EscapeString(to))
 	case "resend":
 		err = postfixResend()
 		successMsg = "Mails wurden zurückgesetzt und zur sofortigen Zustellung freigegeben."
