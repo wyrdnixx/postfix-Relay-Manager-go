@@ -589,24 +589,29 @@ func logsPage(denied []LogEntry, mails []MailLogEntry) string {
 	}
 	var mailRows strings.Builder
 	if len(mails) == 0 {
-		mailRows.WriteString(`<tr><td colspan="6" class="empty">Keine Zustelleinträge gefunden.</td></tr>`)
+		mailRows.WriteString(`<tr><td colspan="7" class="empty">Keine Zustelleinträge gefunden.</td></tr>`)
 	} else {
 		for _, e := range mails {
 			badge := statusBadge[e.Status]
 			if badge == "" {
 				badge = "badge-warn"
 			}
+			clientHTML := `<span style="color:#aaa">–</span>`
+			if e.ClientIP != "" {
+				clientHTML = `<code>` + esc(e.ClientIP) + `</code>`
+			}
 			fmt.Fprintf(&mailRows,
 				`<tr>`+
 					`<td style="white-space:nowrap">%s</td>`+
 					`<td><code style="font-size:.78rem">%s</code></td>`+
+					`<td>%s</td>`+
 					`<td>%s</td>`+
 					`<td style="font-size:.82rem;color:#666">%s</td>`+
 					`<td style="white-space:nowrap">%s</td>`+
 					`<td><span class="badge %s">%s</span></td>`+
 					`</tr>`,
 				esc(e.TimeStr), esc(e.QueueID), esc(e.Recipient),
-				esc(e.Relay), esc(e.Delay), badge, esc(e.Status),
+				clientHTML, esc(e.Relay), esc(e.Delay), badge, esc(e.Status),
 			)
 		}
 	}
@@ -642,7 +647,7 @@ func logsPage(denied []LogEntry, mails []MailLogEntry) string {
       <span id="cd-mail" style="font-size:.8rem;color:#aaa"></span>
     </div>
     <table>
-      <thead><tr><th>Zeitpunkt</th><th>Queue-ID</th><th>Empfänger</th><th>Relay</th><th>Dauer</th><th>Status</th></tr></thead>
+      <thead><tr><th>Zeitpunkt</th><th>Queue-ID</th><th>Empfänger</th><th>Absender-IP</th><th>Relay</th><th>Dauer</th><th>Status</th></tr></thead>
       <tbody id="mail-tbody">%s</tbody>
     </table>
   </div>
@@ -670,9 +675,12 @@ function renderMail(entries) {
     return '<tr><td colspan="6" class="empty">Keine Zustelleinträge gefunden.</td></tr>';
   return entries.map(d => {
     var b = statusBadge[d.status] || 'badge-warn';
+    var ip = d.clientIp ? '<code>' + d.clientIp + '</code>' : '<span style="color:#aaa">–</span>';
     return '<tr><td style="white-space:nowrap">' + d.timeStr + '</td>' +
       '<td><code style="font-size:.78rem">' + d.queueId + '</code></td>' +
-      '<td>' + d.recipient + '</td><td style="font-size:.82rem;color:#666">' + d.relay + '</td>' +
+      '<td>' + d.recipient + '</td>' +
+      '<td>' + ip + '</td>' +
+      '<td style="font-size:.82rem;color:#666">' + d.relay + '</td>' +
       '<td style="white-space:nowrap">' + d.delay + '</td>' +
       '<td><span class="badge ' + b + '">' + d.status + '</span></td></tr>';
   }).join('');

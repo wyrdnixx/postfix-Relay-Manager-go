@@ -37,11 +37,22 @@ var mailStatusRe = regexp.MustCompile(
 	`postfix/smtp\[\d+\]: ([0-9A-F]+): to=<([^>]+)>, relay=(\S+), delay=([\d.]+), .*?status=(sent|deferred|bounced|returned)\s+\(([^)]{0,200})`,
 )
 
+// Regex: Client-IP aus smtpd-Zeilen (eingehende Verbindung)
+var smtpClientRe = regexp.MustCompile(
+	`postfix/smtpd\[\d+\]: ([0-9A-F]+): client=\S+\[(\d{1,3}(?:\.\d{1,3}){3})\]`,
+)
+
+// Regex: lokale Einlieferung via pickup
+var pickupRe = regexp.MustCompile(
+	`postfix/pickup\[\d+\]: ([0-9A-F]+): `,
+)
+
 // MailLogEntry repräsentiert einen Zustellvorgang aus dem Mail-Log.
 type MailLogEntry struct {
 	Time      time.Time `json:"-"`
 	TimeStr   string    `json:"timeStr"`
 	QueueID   string    `json:"queueId"`
+	ClientIP  string    `json:"clientIp"`
 	Recipient string    `json:"recipient"`
 	Relay     string    `json:"relay"`
 	Delay     string    `json:"delay"`
@@ -66,8 +77,21 @@ func getMailLog() []MailLogEntry {
 
 	lines := readLogLines()
 	year := time.Now().Year()
-	var entries []MailLogEntry
 
+	// Pass 1: QueueID → Absender-IP aufbauen
+	clientByID := make(map[string]string)
+	for _, line := range lines {
+		if m := smtpClientRe.FindStringSubmatch(line); m != nil {
+			clientByID[m[1]] = m[2]
+		} else if m := pickupRe.FindStringSubmatch(line); m != nil {
+			if _, exists := clientByID[m[1]]; !exists {
+				clientByID[m[1]] = "lokal"
+			}
+		}
+	}
+
+	// Pass 2: Zustellstatus-Zeilen parsen und IP einsetzen
+	var entries []MailLogEntry
 	for _, line := range lines {
 		if !strings.Contains(line, "status=") {
 			continue
@@ -81,6 +105,7 @@ func getMailLog() []MailLogEntry {
 			Time:      t,
 			TimeStr:   fmtTime(t),
 			QueueID:   m[1],
+			ClientIP:  clientByID[m[1]],
 			Recipient: m[2],
 			Relay:     m[3],
 			Delay:     m[4] + "s",
