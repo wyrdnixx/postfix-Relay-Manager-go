@@ -2,10 +2,12 @@ package main
 
 import (
 	"fmt"
+	"net"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"time"
 )
 
 // CheckResult beschreibt das Ergebnis einer einzelnen Systemprüfung.
@@ -199,6 +201,99 @@ func runPostfixChecks() []CheckResult {
 				Name:    "Rechte für systemctl reload",
 				Status:  "ok",
 				Message: "sudo ohne Passwort konfiguriert",
+			})
+		}
+	}
+
+	// 9. relayhost konfiguriert?
+	if mainCfReadable {
+		if relayhostRe.MatchString(string(mainCfContent)) {
+			m := relayhostRe.FindSubmatch(mainCfContent)
+			val := strings.TrimSpace(string(m[1]))
+			if val == "" {
+				results = append(results, CheckResult{
+					Name:    "relayhost konfiguriert",
+					Status:  "err",
+					Message: "relayhost ist leer",
+					Detail:  "Ohne relayhost versucht Postfix, Mails direkt per MX-Lookup zuzustellen.\nBei Verwendung als Relay-Server muss relayhost auf den Upstream-Mailserver zeigen.\nBeispiel: relayhost = [10.100.0.35]:26",
+				})
+			} else {
+				results = append(results, CheckResult{
+					Name:    "relayhost konfiguriert",
+					Status:  "ok",
+					Message: val,
+				})
+			}
+		} else {
+			results = append(results, CheckResult{
+				Name:    "relayhost konfiguriert",
+				Status:  "err",
+				Message: "relayhost-Direktive fehlt in main.cf",
+				Detail:  "Fügen Sie in main.cf hinzu: relayhost = [10.100.0.35]:26",
+			})
+		}
+	}
+
+	// 10. inet_interfaces – lauscht Postfix auf externe Verbindungen?
+	if mainCfReadable {
+		if inetInterfacesRe.MatchString(string(mainCfContent)) {
+			m := inetInterfacesRe.FindSubmatch(mainCfContent)
+			val := strings.TrimSpace(string(m[1]))
+			if val == "loopback-only" || val == "localhost" {
+				results = append(results, CheckResult{
+					Name:    "inet_interfaces",
+					Status:  "warn",
+					Message: fmt.Sprintf("inet_interfaces = %s", val),
+					Detail:  "Postfix lauscht nur auf localhost und kann keine externen Verbindungen (Drucker, Server, Scanner) annehmen.\nÄndern Sie in main.cf: inet_interfaces = all\nDanach: systemctl restart postfix",
+				})
+			} else {
+				results = append(results, CheckResult{
+					Name:    "inet_interfaces",
+					Status:  "ok",
+					Message: fmt.Sprintf("inet_interfaces = %s", val),
+				})
+			}
+		}
+	}
+
+	// 11. Interne Relay-Server erreichbar?
+	for _, srv := range relayServersInternal {
+		addr := fmt.Sprintf("%s:%d", srv.Host, srv.Port)
+		conn, err := net.DialTimeout("tcp", addr, 3*time.Second)
+		if err != nil {
+			results = append(results, CheckResult{
+				Name:    fmt.Sprintf("Relay intern %s", addr),
+				Status:  "err",
+				Message: "nicht erreichbar",
+				Detail:  err.Error(),
+			})
+		} else {
+			conn.Close()
+			results = append(results, CheckResult{
+				Name:    fmt.Sprintf("Relay intern %s", addr),
+				Status:  "ok",
+				Message: "TCP-Verbindung erfolgreich",
+			})
+		}
+	}
+
+	// 12. Externe Relay-Server erreichbar?
+	for _, srv := range relayServersExternal {
+		addr := fmt.Sprintf("%s:%d", srv.Host, srv.Port)
+		conn, err := net.DialTimeout("tcp", addr, 3*time.Second)
+		if err != nil {
+			results = append(results, CheckResult{
+				Name:    fmt.Sprintf("Relay extern %s", addr),
+				Status:  "err",
+				Message: "nicht erreichbar",
+				Detail:  err.Error(),
+			})
+		} else {
+			conn.Close()
+			results = append(results, CheckResult{
+				Name:    fmt.Sprintf("Relay extern %s", addr),
+				Status:  "ok",
+				Message: "TCP-Verbindung erfolgreich",
 			})
 		}
 	}

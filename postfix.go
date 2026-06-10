@@ -27,6 +27,17 @@ func buildAllowedClients(systems []System) string {
 }
 
 var mynetworksRe = regexp.MustCompile(`(?m)^mynetworks\s*=\s*(.*)$`)
+var relayhostRe = regexp.MustCompile(`(?m)^relayhost\s*=\s*(.*)$`)
+var inetInterfacesRe = regexp.MustCompile(`(?m)^inet_interfaces\s*=\s*(.*)$`)
+
+// buildRelayhost gibt den primären Relayhost aus den internen Relay-Servern zurück.
+func buildRelayhost() string {
+	if len(relayServersInternal) == 0 {
+		return ""
+	}
+	srv := relayServersInternal[0]
+	return fmt.Sprintf("[%s]:%d", srv.Host, srv.Port)
+}
 
 // computeMynetworks berechnet den neuen mynetworks-Wert ohne Seiteneffekte.
 // Wird sowohl von writeMainCf als auch von der Vorschau-API verwendet.
@@ -76,18 +87,36 @@ func writeMainCf() error {
 		appData.BaseMynetworks = base
 	}
 
-	newLine := "mynetworks = " + computeMynetworks(appData.Systems, appData.BaseMynetworks, appData.AllManagedIPs)
+	mynetworksLine := "mynetworks = " + computeMynetworks(appData.Systems, appData.BaseMynetworks, appData.AllManagedIPs)
+	relayhostLine := "relayhost = " + buildRelayhost()
 
 	b, err := os.ReadFile(mainCfFile)
 	if err != nil {
 		return fmt.Errorf("main.cf lesen: %w", err)
 	}
 	content := string(b)
+
 	if mynetworksRe.MatchString(content) {
-		content = mynetworksRe.ReplaceAllString(content, newLine)
+		content = mynetworksRe.ReplaceAllString(content, mynetworksLine)
 	} else {
-		content += "\n" + newLine + "\n"
+		content += "\n" + mynetworksLine + "\n"
 	}
+
+	if relayhostRe.MatchString(content) {
+		content = relayhostRe.ReplaceAllString(content, relayhostLine)
+	} else {
+		content += "\n" + relayhostLine + "\n"
+	}
+
+	// inet_interfaces auf "all" setzen falls noch auf loopback beschränkt
+	if inetInterfacesRe.MatchString(content) {
+		m := inetInterfacesRe.FindStringSubmatch(content)
+		val := strings.TrimSpace(m[1])
+		if val == "loopback-only" || val == "localhost" {
+			content = inetInterfacesRe.ReplaceAllString(content, "inet_interfaces = all")
+		}
+	}
+
 	return os.WriteFile(mainCfFile, []byte(content), 0644)
 }
 
