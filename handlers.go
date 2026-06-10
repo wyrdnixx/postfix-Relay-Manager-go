@@ -301,7 +301,11 @@ func handleSettingsGet(w http.ResponseWriter, r *http.Request) {
 	if sess != nil {
 		flash = sess.getFlash()
 	}
-	writeHTML(w, settingsPage(flash))
+	appMu.Lock()
+	intSrvs := append([]RelayServer{}, relayServersInternal...)
+	extSrvs := append([]RelayServer{}, relayServersExternal...)
+	appMu.Unlock()
+	writeHTML(w, settingsPage(flash, intSrvs, extSrvs))
 }
 
 func handleSettingsPost(w http.ResponseWriter, r *http.Request) {
@@ -312,15 +316,15 @@ func handleSettingsPost(w http.ResponseWriter, r *http.Request) {
 
 	h := sha256.Sum256([]byte(currentPw))
 	if fmt.Sprintf("%x", h) != getPasswordHash() {
-		writeHTML(w, settingsPage(&Flash{"Das aktuelle Passwort ist falsch.", "err"}))
+		writeHTML(w, settingsPageCurrent(&Flash{"Das aktuelle Passwort ist falsch.", "err"}))
 		return
 	}
 	if len(newPw) < 8 {
-		writeHTML(w, settingsPage(&Flash{"Das neue Passwort muss mindestens 8 Zeichen haben.", "err"}))
+		writeHTML(w, settingsPageCurrent(&Flash{"Das neue Passwort muss mindestens 8 Zeichen haben.", "err"}))
 		return
 	}
 	if newPw != confirmPw {
-		writeHTML(w, settingsPage(&Flash{"Die neuen Passwörter stimmen nicht überein.", "err"}))
+		writeHTML(w, settingsPageCurrent(&Flash{"Die neuen Passwörter stimmen nicht überein.", "err"}))
 		return
 	}
 
@@ -338,6 +342,82 @@ func handleSettingsPost(w http.ResponseWriter, r *http.Request) {
 	_, sess := getSession(r)
 	if sess != nil {
 		sess.setFlash(&Flash{"Passwort erfolgreich geändert.", "ok"})
+	}
+	http.Redirect(w, r, "/settings", http.StatusFound)
+}
+
+func settingsPageCurrent(flash *Flash) string {
+	appMu.Lock()
+	intSrvs := append([]RelayServer{}, relayServersInternal...)
+	extSrvs := append([]RelayServer{}, relayServersExternal...)
+	appMu.Unlock()
+	return settingsPage(flash, intSrvs, extSrvs)
+}
+
+func handleSettingsRelayPost(w http.ResponseWriter, r *http.Request) {
+	r.ParseForm()
+
+	parseServers := func(prefix string) ([]RelayServer, error) {
+		hosts := r.Form[prefix+"_host"]
+		ports := r.Form[prefix+"_port"]
+		var out []RelayServer
+		for i, h := range hosts {
+			h = strings.TrimSpace(h)
+			if h == "" {
+				continue
+			}
+			portStr := ""
+			if i < len(ports) {
+				portStr = strings.TrimSpace(ports[i])
+			}
+			p := 0
+			if _, err := fmt.Sscanf(portStr, "%d", &p); err != nil || p < 1 || p > 65535 {
+				return nil, fmt.Errorf("ungültiger Port für %s: %q", h, portStr)
+			}
+			out = append(out, RelayServer{Host: h, Port: p})
+		}
+		return out, nil
+	}
+
+	intSrvs, err := parseServers("int")
+	if err != nil {
+		writeHTML(w, settingsPageCurrent(&Flash{Msg: err.Error(), Type: "err"}))
+		return
+	}
+	extSrvs, err := parseServers("ext")
+	if err != nil {
+		writeHTML(w, settingsPageCurrent(&Flash{Msg: err.Error(), Type: "err"}))
+		return
+	}
+	if len(intSrvs) == 0 {
+		writeHTML(w, settingsPageCurrent(&Flash{Msg: "Mindestens ein interner Relay-Server erforderlich.", Type: "err"}))
+		return
+	}
+	if len(extSrvs) == 0 {
+		writeHTML(w, settingsPageCurrent(&Flash{Msg: "Mindestens ein externer Relay-Server erforderlich.", Type: "err"}))
+		return
+	}
+
+	appMu.Lock()
+	relayServersInternal = intSrvs
+	relayServersExternal = extSrvs
+	if appData.Config == nil {
+		appData.Config = &AppConfig{}
+	}
+	appData.Config.RelayServersInternal = intSrvs
+	appData.Config.RelayServersExternal = extSrvs
+	_ = saveData()
+	applyErr := applyConfig()
+	appMu.Unlock()
+
+	if applyErr != nil {
+		writeHTML(w, settingsPage(&Flash{Msg: "Gespeichert, aber Postfix-Reload fehlgeschlagen: " + applyErr.Error(), Type: "err"}, intSrvs, extSrvs))
+		return
+	}
+
+	_, sess := getSession(r)
+	if sess != nil {
+		sess.setFlash(&Flash{Msg: "Relay-Server gespeichert und Postfix-Konfiguration angewendet.", Type: "ok"})
 	}
 	http.Redirect(w, r, "/settings", http.StatusFound)
 }

@@ -47,6 +47,7 @@ func main() {
 	mux.HandleFunc("GET /logs", authMiddleware(handleLogsPage))
 	mux.HandleFunc("GET /settings", authMiddleware(handleSettingsGet))
 	mux.HandleFunc("POST /settings", authMiddleware(handleSettingsPost))
+	mux.HandleFunc("POST /settings/relay", authMiddleware(handleSettingsRelayPost))
 	mux.HandleFunc("GET /bulk-add", authMiddleware(handleBulkAddGet))
 	mux.HandleFunc("GET /syscheck", authMiddleware(handleSysCheckGet))
 	mux.HandleFunc("GET /postfix", authMiddleware(handlePostfixGet))

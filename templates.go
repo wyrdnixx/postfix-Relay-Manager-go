@@ -754,8 +754,29 @@ func bulkResultPage(r *BulkResult) string {
 
 // ─── Einstellungen-Seite ──────────────────────────────────────────────────────
 
-func settingsPage(flash *Flash) string {
-	body := `
+func settingsPage(flash *Flash, intSrvs, extSrvs []RelayServer) string {
+	body := fmt.Sprintf(`
+<div class="card">
+  <h2>Relay-Server</h2>
+  <form method="POST" action="/settings/relay">
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:24px;margin-bottom:16px">
+      <div>
+        <div style="font-size:.8rem;font-weight:600;color:#555;margin-bottom:8px;text-transform:uppercase;letter-spacing:.04em">Intern</div>
+        <div id="int-rows">%s</div>
+        <button type="button" class="btn btn-ghost" style="margin-top:8px;font-size:.8rem" onclick="addRow('int-rows','int')">+ Hinzufügen</button>
+      </div>
+      <div>
+        <div style="font-size:.8rem;font-weight:600;color:#555;margin-bottom:8px;text-transform:uppercase;letter-spacing:.04em">Extern</div>
+        <div id="ext-rows">%s</div>
+        <button type="button" class="btn btn-ghost" style="margin-top:8px;font-size:.8rem" onclick="addRow('ext-rows','ext')">+ Hinzufügen</button>
+      </div>
+    </div>
+    <div class="actions">
+      <button type="submit" class="btn btn-primary">Speichern &amp; Anwenden</button>
+    </div>
+  </form>
+</div>
+
 <div class="card" style="max-width:480px">
   <h2>Passwort ändern</h2>
   <form method="POST" action="/settings">
@@ -777,15 +798,43 @@ func settingsPage(flash *Flash) string {
     </div>
   </form>
 </div>
-<div class="card" style="max-width:480px;margin-top:0">
-  <h2>Hinweise</h2>
-  <ul style="font-size:.88rem;line-height:1.8;color:#555;padding-left:1.2em">
-    <li>Das neue Passwort wird dauerhaft in <code>data.json</code> gespeichert.</li>
-    <li>Nach einem Neustart ohne <code>data.json</code> greift wieder das Standard-Passwort aus <code>config.go</code>.</li>
-    <li>Aktive Sitzungen bleiben bis zum nächsten Neustart gültig.</li>
-  </ul>
-</div>`
+
+<script>
+function relayRow(prefix, host, port) {
+  var d = document.createElement('div');
+  d.style.cssText = 'display:flex;gap:6px;margin-bottom:6px;align-items:center';
+  d.innerHTML =
+    '<input type="text" name="'+prefix+'_host" value="'+host+'" placeholder="Host / IP" style="flex:2;margin-bottom:0" required>'+
+    '<input type="number" name="'+prefix+'_port" value="'+port+'" placeholder="Port" style="flex:1;margin-bottom:0;min-width:70px" min="1" max="65535" required>'+
+    '<button type="button" class="btn btn-ghost" style="padding:6px 10px;line-height:1" onclick="this.parentNode.remove()">✕</button>';
+  return d;
+}
+function addRow(containerId, prefix) {
+  document.getElementById(containerId).appendChild(relayRow(prefix, '', ''));
+}
+</script>`,
+		relayRowsHTML("int", intSrvs),
+		relayRowsHTML("ext", extSrvs),
+	)
 	return layout("Einstellungen", body, flashToHTML(flash))
+}
+
+func relayRowsHTML(prefix string, srvs []RelayServer) string {
+	if len(srvs) == 0 {
+		return ""
+	}
+	var sb strings.Builder
+	for _, s := range srvs {
+		fmt.Fprintf(&sb,
+			`<div style="display:flex;gap:6px;margin-bottom:6px;align-items:center">`+
+				`<input type="text" name="%s_host" value="%s" placeholder="Host / IP" style="flex:2;margin-bottom:0" required>`+
+				`<input type="number" name="%s_port" value="%d" placeholder="Port" style="flex:1;margin-bottom:0;min-width:70px" min="1" max="65535" required>`+
+				`<button type="button" class="btn btn-ghost" style="padding:6px 10px;line-height:1" onclick="this.parentNode.remove()">✕</button>`+
+				`</div>`,
+			prefix, esc(s.Host), prefix, s.Port,
+		)
+	}
+	return sb.String()
 }
 
 // ─── Systemprüfungs-Seite ─────────────────────────────────────────────────────
