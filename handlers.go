@@ -359,20 +359,16 @@ func handleSettingsRelayPost(w http.ResponseWriter, r *http.Request) {
 
 	parseServers := func(prefix string) ([]RelayServer, error) {
 		hosts := r.Form[prefix+"_host"]
-		ports := r.Form[prefix+"_port"]
+		portStr := strings.TrimSpace(r.FormValue(prefix + "_port"))
+		p := 0
+		if _, err := fmt.Sscanf(portStr, "%d", &p); err != nil || p < 1 || p > 65535 {
+			return nil, fmt.Errorf("ungültiger Port für %s-Server: %q", prefix, portStr)
+		}
 		var out []RelayServer
-		for i, h := range hosts {
+		for _, h := range hosts {
 			h = strings.TrimSpace(h)
 			if h == "" {
 				continue
-			}
-			portStr := ""
-			if i < len(ports) {
-				portStr = strings.TrimSpace(ports[i])
-			}
-			p := 0
-			if _, err := fmt.Sscanf(portStr, "%d", &p); err != nil || p < 1 || p > 65535 {
-				return nil, fmt.Errorf("ungültiger Port für %s: %q", h, portStr)
 			}
 			out = append(out, RelayServer{Host: h, Port: p})
 		}

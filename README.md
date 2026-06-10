@@ -1,18 +1,33 @@
 # Postfix Relay Manager
 
-Webbasiertes Verwaltungswerkzeug für Postfix-Relay-Berechtigungen. Erlaubt das Hinzufügen, Bearbeiten und Löschen von Client-Systemen (Drucker, Server, etc.), die über den Postfix-Server E-Mails senden dürfen. Änderungen werden automatisch in `/etc/postfix/allowed_clients` und `main.cf` geschrieben und Postfix wird neu geladen.
+Webbasiertes Verwaltungswerkzeug für einen Postfix-Server, der als SMTP-Relay für interne Geräte (Drucker, Scanner, Server) fungiert. Über die Weboberfläche werden Client-Systeme registriert, Relay-Server konfiguriert und Postfix-Einstellungen automatisch angewendet.
+
+---
+
+## Funktionsumfang
+
+| Seite | Funktion |
+|---|---|
+| **Startseite** | Übersicht aller registrierten Systeme, hinzufügen / bearbeiten / löschen |
+| **Postfix-Status** | Warteschlange, Dienststatus, Aktionen (Resend, Löschen, Neustart), Test-Mail |
+| **Systemprüfung** | Automatische Diagnose der Postfix-Konfiguration und Relay-Erreichbarkeit |
+| **Einstellungen** | Relay-Server konfigurieren, Passwort ändern |
+
+Der **Queue-Badge** in der Navigation zeigt die aktuelle Anzahl wartender Mails und verlinkt direkt zur Postfix-Statusseite.
+
+---
 
 ## Voraussetzungen
 
-- Linux-Server mit laufendem Postfix
+- Linux-Server mit installiertem und laufendem Postfix
 - Go 1.22 oder neuer (nur zum Kompilieren)
-- `sudo`-Berechtigung oder Root-Ausführung (für `postmap` und `systemctl reload postfix`)
+- Root-Berechtigung oder `sudo` (für Postfix-Konfiguration und `/etc/hosts`)
 
 ---
 
 ## Installation
 
-### 1. Quellcode kompilieren
+### 1. Kompilieren
 
 ```bash
 git clone <repository-url> postfix-relay-manager
@@ -20,73 +35,108 @@ cd postfix-relay-manager
 go build -o postfix-relay-manager .
 ```
 
-### 2. Verzeichnis anlegen und Dateien kopieren
+### 2. Installieren
 
 ```bash
 sudo mkdir -p /opt/postfix-relay-manager
 sudo cp postfix-relay-manager /opt/postfix-relay-manager/
+sudo cp data.json.example /opt/postfix-relay-manager/data.json
 ```
 
-### 3. `data.json` anlegen
+### 3. `data.json` konfigurieren
 
 ```bash
-sudo cp data.json.example /opt/postfix-relay-manager/data.json
 sudo nano /opt/postfix-relay-manager/data.json
 ```
 
-Die `data.json` muss mindestens die Felder unter `config` enthalten (siehe Abschnitt [Konfiguration](#konfiguration)).
+Mindestens diese Felder unter `config` müssen gesetzt sein:
 
-### 4. Passwort-Hash generieren
+| Feld | Beschreibung |
+|---|---|
+| `adminUsername` | Login-Benutzername |
+| `adminPasswordHash` | SHA-256-Hash des Passworts (siehe unten) |
+| `relayServersInternal` | Upstream-Relay-Server für interne Systeme |
+| `relayServersExternal` | Upstream-Relay-Server für externe Systeme |
 
-Das Passwort wird als SHA-256-Hash in `data.json` gespeichert. Hash erzeugen:
-
+**Passwort-Hash erzeugen:**
 ```bash
 echo -n 'MEIN_PASSWORT' | sha256sum | cut -d' ' -f1
 ```
 
-Den ausgegebenen Hash in `data.json` unter `config.adminPasswordHash` eintragen.
-
-### 5. Systemd-Service einrichten
+### 4. Systemd-Service einrichten
 
 ```bash
 sudo cp postfix-relay-manager.service /etc/systemd/system/
 sudo systemctl daemon-reload
-sudo systemctl enable postfix-relay-manager
-sudo systemctl start postfix-relay-manager
+sudo systemctl enable --now postfix-relay-manager
 ```
 
-### 6. Status prüfen
+### 5. Status prüfen
 
 ```bash
 sudo systemctl status postfix-relay-manager
-sudo journalctl -u postfix-relay-manager -f
 ```
 
 ---
 
-## Konfiguration
+## Konfiguration der Relay-Server
 
-Die gesamte Konfiguration befindet sich in `/opt/postfix-relay-manager/data.json` neben der ausführbaren Datei.
+Die Relay-Server werden über **Einstellungen → Relay-Server** konfiguriert und lassen sich dort jederzeit ändern. Nach dem Klick auf **Speichern & Anwenden** werden alle Postfix-Konfigurationsdateien sofort aktualisiert und Postfix neu geladen.
 
-### Pflichtfelder
+### Intern / Extern
 
-| Feld | Beschreibung |
+- **Intern**: Upstream-Server für interne Systeme (z. B. Drucker, Scanner im LAN)
+- **Extern**: Upstream-Server für externe Systeme (z. B. DMZ-Server mit Internet-Relay)
+
+Alle Server einer Gruppe verwenden **denselben Port**. Es können beliebig viele Server pro Gruppe eingetragen werden.
+
+### Automatischer Failover
+
+Der Postfix Relay Manager konfiguriert Postfix so, dass bei Ausfall eines Relay-Servers automatisch der nächste versucht wird:
+
+1. Alle Server einer Gruppe werden als A-Records eines virtuellen Hostnamens in `/etc/hosts` eingetragen:
+   ```
+   # --- postfix-relay-manager begin ---
+   192.168.1.10    relay-int.prm
+   192.168.1.11    relay-int.prm
+   10.0.0.10       relay-ext.prm
+   10.0.0.11       relay-ext.prm
+   # --- postfix-relay-manager end ---
+   ```
+
+2. Postfix verwendet diesen Hostnamen als `relayhost`:
+   ```
+   relayhost = [relay-int.prm]:26
+   ```
+
+3. Schlägt die Verbindung zum ersten Server fehl, versucht Postfix automatisch den nächsten A-Record — ohne Verzögerung und ohne manuelle Eingriffe.
+
+> **Wichtig:** Alle Server einer Gruppe müssen über denselben Port erreichbar sein.
+
+---
+
+## Von Postfix verwaltete Konfigurationsdateien
+
+Der Manager schreibt und aktualisiert folgende Dateien automatisch bei jeder Konfigurationsänderung:
+
+| Datei | Inhalt |
 |---|---|
-| `config.adminUsername` | Login-Benutzername |
-| `config.adminPasswordHash` | SHA-256-Hash des Passworts |
-| `config.relayServersInternal` | Relay-Server für interne Systeme |
-| `config.relayServersExternal` | Relay-Server für externe Systeme |
+| `/etc/postfix/allowed_clients` | Zuordnung Client-IP → Relay-Transport (FILTER) |
+| `/etc/postfix/main.cf` | `mynetworks`, `relayhost`, `inet_interfaces` |
+| `/etc/hosts` | Failover-A-Records für `relay-int.prm` / `relay-ext.prm` |
 
-Fehlen diese Felder, beendet sich das Programm beim Start mit einer Fehlermeldung.
+Nach jeder Änderung werden `postmap` und `systemctl reload postfix` automatisch ausgeführt.
 
-### Optionale Felder
+### Empfohlene `main.cf`-Einträge
 
-| Feld | Standard | Beschreibung |
-|---|---|---|
-| `config.port` | `8080` | HTTP-Port der Weboberfläche |
-| `config.allowedClientsFile` | `/etc/postfix/allowed_clients` | Pfad zur allowed_clients-Datei |
-| `config.mainCfFile` | `/etc/postfix/main.cf` | Pfad zur main.cf |
-| `config.mailLogFile` | `/var/log/mail.log` | Pfad zum Mail-Log (Fallback: journalctl) |
+Diese Zeile muss einmalig manuell in `/etc/postfix/main.cf` eingetragen werden:
+
+```
+smtpd_client_restrictions =
+    check_client_access hash:/etc/postfix/allowed_clients
+```
+
+Die Systemprüfung weist darauf hin, falls dieser Eintrag fehlt.
 
 ---
 
@@ -99,24 +149,12 @@ Fehlen diese Felder, beendet sich das Programm beim Start mit einer Fehlermeldun
   "allManagedIps": [],
   "config": {
     "relayServersInternal": [
-      {
-        "host": "10.100.0.35",
-        "port": 26
-      },
-      {
-        "host": "10.100.0.36",
-        "port": 26
-      }
+      { "host": "192.168.1.10", "port": 26 },
+      { "host": "192.168.1.11", "port": 26 }
     ],
     "relayServersExternal": [
-      {
-        "host": "10.100.0.31",
-        "port": 27
-      },
-      {
-        "host": "10.100.0.32",
-        "port": 27
-      }
+      { "host": "10.0.0.10", "port": 27 },
+      { "host": "10.0.0.11", "port": 27 }
     ],
     "allowedClientsFile": "/etc/postfix/allowed_clients",
     "mainCfFile": "/etc/postfix/main.cf",
@@ -128,58 +166,46 @@ Fehlen diese Felder, beendet sich das Programm beim Start mit einer Fehlermeldun
 }
 ```
 
-> Der oben eingetragene Hash entspricht dem Passwort `changeme`.  
-> **Vor dem ersten produktiven Einsatz unbedingt durch einen eigenen Hash ersetzen.**
+> Der Hash entspricht dem Passwort `changeme` — **vor dem ersten produktiven Einsatz ersetzen.**
+
+---
+
+## Optionale Konfigurationsfelder
+
+| Feld | Standard | Beschreibung |
+|---|---|---|
+| `config.port` | `8080` | HTTP-Port der Weboberfläche |
+| `config.allowedClientsFile` | `/etc/postfix/allowed_clients` | Pfad zur allowed_clients-Datei |
+| `config.mainCfFile` | `/etc/postfix/main.cf` | Pfad zur main.cf |
+| `config.mailLogFile` | `/var/log/mail.log` | Pfad zum Mail-Log |
 
 ---
 
 ## Passwort ändern
 
-### Option A – Weboberfläche
+**Option A – Weboberfläche:** Einstellungen → Passwort ändern.
 
-Nach dem Login unter **Einstellungen** → **Passwort ändern**.  
-Der neue Hash wird automatisch in `data.json` gespeichert.
-
-### Option B – Manuell in `data.json`
-
+**Option B – manuell:**
 ```bash
-# Neuen Hash erzeugen
 echo -n 'NEUES_PASSWORT' | sha256sum | cut -d' ' -f1
-
-# data.json bearbeiten
-sudo nano /opt/postfix-relay-manager/data.json
-
-# Service neu starten
+# Hash in data.json unter config.adminPasswordHash eintragen
 sudo systemctl restart postfix-relay-manager
 ```
 
 ---
 
-## Postfix-Konfiguration
+## Systemprüfung
 
-Der Manager schreibt zwei Dateien:
+Die Seite **Systemprüfung** prüft automatisch:
 
-**`/etc/postfix/allowed_clients`** – Weist jede Client-IP einem Relay-Server zu:
-```
-10.10.1.50 FILTER smtp:[10.100.0.35]:26,smtp:[10.100.0.36]:26
-10.10.1.51 FILTER smtp:[10.100.0.31]:27,smtp:[10.100.0.32]:27
-```
-
-**`/etc/postfix/main.cf`** – Die `mynetworks`-Zeile wird aktualisiert:
-```
-mynetworks = 127.0.0.0/8 [::1]/128 10.10.1.50 10.10.1.51
-```
-
-Nach jeder Änderung werden `postmap` und `systemctl reload postfix` automatisch ausgeführt.
-
-### Empfohlene main.cf-Einträge
-
-```
-smtpd_recipient_restrictions =
-    permit_mynetworks,
-    check_client_access hash:/etc/postfix/allowed_clients,
-    reject_unauth_destination
-```
+- Postfix installiert und Dienst aktiv
+- `postmap` verfügbar
+- `main.cf` lesbar und beschreibbar
+- `relayhost` konfiguriert (mit Hinweis auf aktiven Failover)
+- `inet_interfaces` nicht auf `loopback-only` beschränkt
+- `allowed_clients` in `main.cf` referenziert
+- TCP-Erreichbarkeit aller konfigurierten Relay-Server
+- sudo-Berechtigung für `postmap` / `systemctl reload`
 
 ---
 
@@ -191,4 +217,11 @@ sudo systemctl disable postfix-relay-manager
 sudo rm /etc/systemd/system/postfix-relay-manager.service
 sudo systemctl daemon-reload
 sudo rm -rf /opt/postfix-relay-manager
+
+# Verwalteten /etc/hosts-Block entfernen
+sudo sed -i '/# --- postfix-relay-manager begin ---/,/# --- postfix-relay-manager end ---/d' /etc/hosts
+
+# Postfix-Konfiguration bereinigen
+sudo postconf -e 'relayhost='
+sudo systemctl reload postfix
 ```

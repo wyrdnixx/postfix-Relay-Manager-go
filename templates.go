@@ -755,20 +755,42 @@ func bulkResultPage(r *BulkResult) string {
 // ─── Einstellungen-Seite ──────────────────────────────────────────────────────
 
 func settingsPage(flash *Flash, intSrvs, extSrvs []RelayServer) string {
+	intPort, extPort := 25, 25
+	if len(intSrvs) > 0 {
+		intPort = intSrvs[0].Port
+	}
+	if len(extSrvs) > 0 {
+		extPort = extSrvs[0].Port
+	}
+
 	body := fmt.Sprintf(`
 <div class="card">
   <h2>Relay-Server</h2>
+  <p style="font-size:.83rem;color:#666;margin-bottom:16px">
+    Alle Server einer Gruppe verwenden denselben Port. Bei Ausfall eines Servers
+    versucht Postfix automatisch den nächsten (<a href="/syscheck" style="color:inherit">Failover via /etc/hosts</a>).
+  </p>
   <form method="POST" action="/settings/relay">
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:24px;margin-bottom:16px">
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:32px;margin-bottom:16px">
       <div>
-        <div style="font-size:.8rem;font-weight:600;color:#555;margin-bottom:8px;text-transform:uppercase;letter-spacing:.04em">Intern</div>
+        <div style="font-size:.8rem;font-weight:600;color:#555;margin-bottom:10px;text-transform:uppercase;letter-spacing:.04em">Intern</div>
+        <div class="form-row" style="margin-bottom:10px">
+          <label>Port</label>
+          <input type="number" name="int_port" value="%d" min="1" max="65535" required style="width:110px">
+        </div>
+        <label style="font-size:.82rem;font-weight:600;color:#555;margin-bottom:6px;display:block">Server (Host / IP)</label>
         <div id="int-rows">%s</div>
-        <button type="button" class="btn btn-ghost" style="margin-top:8px;font-size:.8rem" onclick="addRow('int-rows','int')">+ Hinzufügen</button>
+        <button type="button" class="btn btn-ghost" style="margin-top:6px;font-size:.8rem" onclick="addHostRow('int-rows','int_host')">+ Hinzufügen</button>
       </div>
       <div>
-        <div style="font-size:.8rem;font-weight:600;color:#555;margin-bottom:8px;text-transform:uppercase;letter-spacing:.04em">Extern</div>
+        <div style="font-size:.8rem;font-weight:600;color:#555;margin-bottom:10px;text-transform:uppercase;letter-spacing:.04em">Extern</div>
+        <div class="form-row" style="margin-bottom:10px">
+          <label>Port</label>
+          <input type="number" name="ext_port" value="%d" min="1" max="65535" required style="width:110px">
+        </div>
+        <label style="font-size:.82rem;font-weight:600;color:#555;margin-bottom:6px;display:block">Server (Host / IP)</label>
         <div id="ext-rows">%s</div>
-        <button type="button" class="btn btn-ghost" style="margin-top:8px;font-size:.8rem" onclick="addRow('ext-rows','ext')">+ Hinzufügen</button>
+        <button type="button" class="btn btn-ghost" style="margin-top:6px;font-size:.8rem" onclick="addHostRow('ext-rows','ext_host')">+ Hinzufügen</button>
       </div>
     </div>
     <div class="actions">
@@ -800,38 +822,32 @@ func settingsPage(flash *Flash, intSrvs, extSrvs []RelayServer) string {
 </div>
 
 <script>
-function relayRow(prefix, host, port) {
+function hostRow(name, val) {
   var d = document.createElement('div');
   d.style.cssText = 'display:flex;gap:6px;margin-bottom:6px;align-items:center';
-  d.innerHTML =
-    '<input type="text" name="'+prefix+'_host" value="'+host+'" placeholder="Host / IP" style="flex:2;margin-bottom:0" required>'+
-    '<input type="number" name="'+prefix+'_port" value="'+port+'" placeholder="Port" style="flex:1;margin-bottom:0;min-width:70px" min="1" max="65535" required>'+
+  d.innerHTML = '<input type="text" name="'+name+'" value="'+val+'" placeholder="Host / IP" style="flex:1;margin-bottom:0" required>'+
     '<button type="button" class="btn btn-ghost" style="padding:6px 10px;line-height:1" onclick="this.parentNode.remove()">✕</button>';
   return d;
 }
-function addRow(containerId, prefix) {
-  document.getElementById(containerId).appendChild(relayRow(prefix, '', ''));
+function addHostRow(containerId, name) {
+  document.getElementById(containerId).appendChild(hostRow(name, ''));
 }
 </script>`,
-		relayRowsHTML("int", intSrvs),
-		relayRowsHTML("ext", extSrvs),
+		intPort, hostRowsHTML("int_host", intSrvs),
+		extPort, hostRowsHTML("ext_host", extSrvs),
 	)
 	return layout("Einstellungen", body, flashToHTML(flash))
 }
 
-func relayRowsHTML(prefix string, srvs []RelayServer) string {
-	if len(srvs) == 0 {
-		return ""
-	}
+func hostRowsHTML(name string, srvs []RelayServer) string {
 	var sb strings.Builder
 	for _, s := range srvs {
 		fmt.Fprintf(&sb,
 			`<div style="display:flex;gap:6px;margin-bottom:6px;align-items:center">`+
-				`<input type="text" name="%s_host" value="%s" placeholder="Host / IP" style="flex:2;margin-bottom:0" required>`+
-				`<input type="number" name="%s_port" value="%d" placeholder="Port" style="flex:1;margin-bottom:0;min-width:70px" min="1" max="65535" required>`+
+				`<input type="text" name="%s" value="%s" placeholder="Host / IP" style="flex:1;margin-bottom:0" required>`+
 				`<button type="button" class="btn btn-ghost" style="padding:6px 10px;line-height:1" onclick="this.parentNode.remove()">✕</button>`+
 				`</div>`,
-			prefix, esc(s.Host), prefix, s.Port,
+			name, esc(s.Host),
 		)
 	}
 	return sb.String()
