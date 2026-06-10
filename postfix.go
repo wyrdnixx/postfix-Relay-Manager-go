@@ -189,21 +189,26 @@ func runPrivileged(args ...string) (string, error) {
 	return strings.TrimSpace(string(out)), err
 }
 
-// postfixFlush sendet alle Mails in der Warteschlange sofort.
-func postfixFlush() error {
-	out, err := runPrivileged("postqueue", "-f")
-	if err != nil {
+// postfixResend setzt zurückgestellte Mails zurück und triggert sofortige Zustellung.
+func postfixResend() error {
+	// Deferred → Incoming zurücksetzen
+	if out, err := runPrivileged("postsuper", "-r", "ALL"); err != nil {
+		return fmt.Errorf("postsuper -r ALL: %w\n%s", err, out)
+	}
+	// Sofortige Zustellung aller aktiven Mails anstoßen
+	if out, err := runPrivileged("postqueue", "-f"); err != nil {
 		return fmt.Errorf("postqueue -f: %w\n%s", err, out)
 	}
 	return nil
 }
 
-// postfixRequeue stellt alle zurückgestellten Mails wieder in die aktive Warteschlange.
-func postfixRequeue() error {
-	out, err := runPrivileged("postsuper", "-r", "ALL")
+// postfixPurge löscht alle Mails aus der Warteschlange.
+func postfixPurge() error {
+	out, err := runPrivileged("postsuper", "-d", "ALL")
 	if err != nil {
-		return fmt.Errorf("postsuper -r ALL: %w\n%s", err, out)
+		return fmt.Errorf("postsuper -d ALL: %w\n%s", err, out)
 	}
+	_ = out
 	return nil
 }
 

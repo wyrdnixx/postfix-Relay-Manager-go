@@ -917,16 +917,16 @@ func postfixPage(d PostfixPageData) string {
     </div>
     <div style="display:flex;gap:8px;flex-wrap:wrap;margin-left:auto">
       <form method="POST" action="/postfix" style="display:inline">
-        <input type="hidden" name="action" value="flush">
-        <button type="submit" class="btn btn-primary" title="Sofortige Zustellung aller Mails versuchen">Warteschlange leeren (flush)</button>
+        <input type="hidden" name="action" value="resend">
+        <button type="submit" class="btn btn-primary" title="Zurückgestellte Mails zurücksetzen und sofort erneut zustellen">Mails erneut zustellen</button>
       </form>
-      <form method="POST" action="/postfix" style="display:inline">
-        <input type="hidden" name="action" value="requeue">
-        <button type="submit" class="btn btn-warn" title="Zurückgestellte Mails erneut einreihen">Zurückgestellte neu einreihen</button>
+      <form method="POST" action="/postfix" style="display:inline" onsubmit="return confirm('Alle Mails in der Warteschlange unwiderruflich löschen?')">
+        <input type="hidden" name="action" value="purge">
+        <button type="submit" class="btn btn-danger" title="Alle Mails in der Warteschlange löschen">Warteschlange löschen</button>
       </form>
       <form method="POST" action="/postfix" style="display:inline" onsubmit="return confirm('Postfix wirklich neu starten?')">
         <input type="hidden" name="action" value="restart">
-        <button type="submit" class="btn btn-danger">Postfix neu starten</button>
+        <button type="submit" class="btn btn-ghost">Postfix neu starten</button>
       </form>
     </div>
   </div>

@@ -593,12 +593,12 @@ func handlePostfixPost(w http.ResponseWriter, r *http.Request) {
 	var successMsg string
 
 	switch action {
-	case "flush":
-		err = postfixFlush()
-		successMsg = "Warteschlange wurde zur sofortigen Zustellung freigegeben."
-	case "requeue":
-		err = postfixRequeue()
-		successMsg = "Zurückgestellte Mails wurden erneut eingereiht."
+	case "resend":
+		err = postfixResend()
+		successMsg = "Mails wurden zurückgesetzt und zur sofortigen Zustellung freigegeben."
+	case "purge":
+		err = postfixPurge()
+		successMsg = "Alle Mails in der Warteschlange wurden gelöscht."
 	case "restart":
 		err = postfixRestart()
 		successMsg = "Postfix wurde neu gestartet."
