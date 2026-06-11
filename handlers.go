@@ -157,11 +157,11 @@ func handleAddPost(w http.ResponseWriter, r *http.Request) {
 	_, sess := getSession(r)
 	if sess != nil {
 		if applyErr != nil {
-			sess.setFlash(&Flash{"System gespeichert, aber Postfix-Reload fehlgeschlagen: " + applyErr.Error(), "err"})
+			sess.setFlash(&Flash{"System gespeichert, aber Postfix-Neustart fehlgeschlagen: " + applyErr.Error(), "err"})
 		} else if saveErr != nil {
 			sess.setFlash(&Flash{"Konfiguration angewendet, aber Daten nicht gespeichert: " + saveErr.Error(), "err"})
 		} else {
-			sess.setFlash(&Flash{fmt.Sprintf("System %s erfolgreich hinzugefügt. Postfix wurde neu geladen.", ip), "ok"})
+			sess.setFlash(&Flash{fmt.Sprintf("System %s erfolgreich hinzugefügt. Postfix wurde neu gestartet.", ip), "ok"})
 		}
 	}
 	http.Redirect(w, r, "/", http.StatusFound)
@@ -236,11 +236,11 @@ func handleEditPost(w http.ResponseWriter, r *http.Request) {
 	_, sess := getSession(r)
 	if sess != nil {
 		if applyErr != nil {
-			sess.setFlash(&Flash{"Gespeichert, aber Postfix-Reload fehlgeschlagen: " + applyErr.Error(), "err"})
+			sess.setFlash(&Flash{"Gespeichert, aber Postfix-Neustart fehlgeschlagen: " + applyErr.Error(), "err"})
 		} else if saveErr != nil {
 			sess.setFlash(&Flash{"Konfiguration angewendet, aber Daten nicht gespeichert: " + saveErr.Error(), "err"})
 		} else {
-			sess.setFlash(&Flash{fmt.Sprintf("System %s erfolgreich aktualisiert. Postfix wurde neu geladen.", ip), "ok"})
+			sess.setFlash(&Flash{fmt.Sprintf("System %s erfolgreich aktualisiert. Postfix wurde neu gestartet.", ip), "ok"})
 		}
 	}
 	http.Redirect(w, r, "/", http.StatusFound)
@@ -274,11 +274,11 @@ func handleDeletePost(w http.ResponseWriter, r *http.Request) {
 	_, sess := getSession(r)
 	if sess != nil {
 		if applyErr != nil {
-			sess.setFlash(&Flash{"Gelöscht, aber Postfix-Reload fehlgeschlagen: " + applyErr.Error(), "err"})
+			sess.setFlash(&Flash{"Gelöscht, aber Postfix-Neustart fehlgeschlagen: " + applyErr.Error(), "err"})
 		} else if saveErr != nil {
 			sess.setFlash(&Flash{"Konfiguration angewendet, aber Daten nicht gespeichert: " + saveErr.Error(), "err"})
 		} else {
-			sess.setFlash(&Flash{fmt.Sprintf("System %s erfolgreich entfernt. Postfix wurde neu geladen.", deletedIP), "ok"})
+			sess.setFlash(&Flash{fmt.Sprintf("System %s erfolgreich entfernt. Postfix wurde neu gestartet.", deletedIP), "ok"})
 		}
 	}
 	http.Redirect(w, r, "/", http.StatusFound)
@@ -422,7 +422,7 @@ func handleSettingsRelayPost(w http.ResponseWriter, r *http.Request) {
 	appMu.Unlock()
 
 	if applyErr != nil {
-		writeHTML(w, settingsPage(&Flash{Msg: "Gespeichert, aber Postfix-Reload fehlgeschlagen: " + applyErr.Error(), Type: "err"}, intSrvs, extSrvs))
+		writeHTML(w, settingsPage(&Flash{Msg: "Gespeichert, aber Postfix-Neustart fehlgeschlagen: " + applyErr.Error(), Type: "err"}, intSrvs, extSrvs))
 		return
 	}
 	if saveErr != nil {
@@ -661,7 +661,7 @@ func handleBulkAddPost(w http.ResponseWriter, r *http.Request) {
 		_, sess := getSession(r)
 		if sess != nil {
 			sess.setFlash(&Flash{
-				fmt.Sprintf("%d IP(s) erfolgreich importiert. Postfix wurde neu geladen.", len(added)),
+				fmt.Sprintf("%d IP(s) erfolgreich importiert. Postfix wurde neu gestartet.", len(added)),
 				"ok",
 			})
 		}
