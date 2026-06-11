@@ -114,6 +114,7 @@ func css() string {
     .badge-ok{background:#e8f5e9;color:#2e7d32}
     .badge-ko{background:#ffebee;color:#c62828}
     .badge-warn{background:#fff8e1;color:#e65100}
+    .badge-info{background:#e3f2fd;color:#1565c0}
     .badge-cat-printer{background:#fff7ed;color:#c2410c}
     .badge-cat-server{background:#eff6ff;color:#1d4ed8}
     .badge-cat-scanner{background:#f0fdf4;color:#15803d}
@@ -934,21 +935,24 @@ func sysCheckPage(results []CheckResult) string {
 		"ok":   "✓",
 		"warn": "⚠",
 		"err":  "✗",
+		"info": "ℹ",
 	}
 	statusBadge := map[string]string{
 		"ok":   "badge-ok",
 		"warn": "badge-warn",
 		"err":  "badge-ko",
+		"info": "badge-info",
 	}
 	statusLabel := map[string]string{
 		"ok":   "OK",
 		"warn": "Warnung",
 		"err":  "Fehler",
+		"info": "Info",
 	}
 
 	allOK := true
 	for _, r := range results {
-		if r.Status != "ok" {
+		if r.Status == "err" || r.Status == "warn" {
 			allOK = false
 			break
 		}

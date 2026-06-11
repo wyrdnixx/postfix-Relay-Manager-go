@@ -207,16 +207,19 @@ func runPostfixChecks() []CheckResult {
 	}
 
 	// 9. relayhost konfiguriert?
+	// Hinweis: relayhost ist für das Client-Relay NICHT erforderlich – das Routing
+	// übernimmt der FILTER-Transport in allowed_clients (smtp:[relay-int.prm]:Port).
+	// relayhost greift nur für lokal erzeugte Mails (Cron, Systemmeldungen).
 	if mainCfReadable {
 		if relayhostRe.MatchString(string(mainCfContent)) {
 			m := relayhostRe.FindSubmatch(mainCfContent)
 			val := strings.TrimSpace(string(m[1]))
 			if val == "" {
 				results = append(results, CheckResult{
-					Name:    "relayhost konfiguriert",
-					Status:  "err",
-					Message: "relayhost ist leer",
-					Detail:  "Ohne relayhost versucht Postfix, Mails direkt per MX-Lookup zuzustellen.\nBei Verwendung als Relay-Server muss relayhost auf den Upstream-Mailserver zeigen.\nBeispiel: relayhost = [10.100.0.35]:26",
+					Name:    "relayhost (lokale Mails)",
+					Status:  "warn",
+					Message: "relayhost ist leer – lokale Systemmails werden direkt zugestellt",
+					Detail:  "Für Client-Relaying (Drucker, Scanner) ist relayhost nicht nötig – das übernimmt der FILTER-Transport in allowed_clients.\nFür lokale Systemmails (Cron etc.) kann relayhost gesetzt werden:\n  relayhost = [relay-int.prm]:" + strconv.Itoa(func() int { if len(relayServersInternal) > 0 { return relayServersInternal[0].Port }; return 25 }()),
 				})
 			} else {
 				detail := ""
@@ -224,7 +227,7 @@ func runPostfixChecks() []CheckResult {
 					detail = fmt.Sprintf("Failover aktiv: Postfix probiert alle A-Records von %s der Reihe nach.", relayIntHost)
 				}
 				results = append(results, CheckResult{
-					Name:    "relayhost konfiguriert",
+					Name:    "relayhost (lokale Mails)",
 					Status:  "ok",
 					Message: val,
 					Detail:  detail,
@@ -232,10 +235,10 @@ func runPostfixChecks() []CheckResult {
 			}
 		} else {
 			results = append(results, CheckResult{
-				Name:    "relayhost konfiguriert",
-				Status:  "err",
-				Message: "relayhost-Direktive fehlt in main.cf",
-				Detail:  "Fügen Sie in main.cf hinzu: relayhost = [10.100.0.35]:26",
+				Name:    "relayhost (lokale Mails)",
+				Status:  "info",
+				Message: "relayhost nicht gesetzt – für Client-Relay nicht erforderlich",
+				Detail:  "Das Client-Routing läuft über den FILTER-Transport in allowed_clients und benötigt keinen relayhost.\nOptional für lokale Systemmails: relayhost = [relay-int.prm]:" + strconv.Itoa(func() int { if len(relayServersInternal) > 0 { return relayServersInternal[0].Port }; return 25 }()),
 			})
 		}
 	}
