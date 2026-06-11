@@ -12,6 +12,7 @@ Restart=on-failure
 RestartSec=5
 StandardOutput=journal
 StandardError=journal
+SyslogIdentifier=postfix-relay-manager
 
 [Install]
 WantedBy=multi-user.target

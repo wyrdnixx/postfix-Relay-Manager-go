@@ -1,7 +1,6 @@
 package main
 
 import (
-	"fmt"
 	"log"
 	"net/http"
 	"os"
@@ -9,19 +8,24 @@ import (
 )
 
 func main() {
+	// Zeitstempel aus log entfernen – systemd/journald stempelt selbst
+	log.SetFlags(0)
+	log.SetPrefix("postfix-relay-manager: ")
+
 	// Datenpfad relativ zur ausführbaren Datei bestimmen
 	exe, err := os.Executable()
 	if err != nil {
-		log.Fatal("Fehler beim Bestimmen des Ausführungspfads:", err)
+		log.Fatal("Ausführungspfad nicht ermittelbar: ", err)
 	}
 	exe, err = filepath.EvalSymlinks(exe)
 	if err != nil {
-		log.Fatal("Fehler beim Auflösen von Symlinks:", err)
+		log.Fatal("Symlink-Auflösung fehlgeschlagen: ", err)
 	}
 	dataFilePath = filepath.Join(filepath.Dir(exe), "data.json")
+	log.Printf("Datenpfad: %s", dataFilePath)
 
 	if err := loadData(); err != nil {
-		log.Fatal("Fehler beim Laden von data.json:", err)
+		log.Fatal("data.json laden fehlgeschlagen: ", err)
 	}
 
 	if err := validateConfig(); err != nil {
@@ -29,6 +33,7 @@ func main() {
 	}
 
 	setPasswordHash(appData.Config.AdminPasswordHash)
+	log.Printf("Starte auf http://0.0.0.0%s", listenAddr)
 
 	mux := http.NewServeMux()
 
@@ -61,7 +66,5 @@ func main() {
 	mux.HandleFunc("POST /api/preview", authMiddleware(handleApiPreview))
 	mux.HandleFunc("GET /api/resolve", authMiddleware(handleApiResolve))
 
-	fmt.Printf("Postfix Relay Manager läuft auf http://0.0.0.0%s\n", listenAddr)
-	fmt.Println("SHA-256 für neues Passwort generieren: echo -n 'NEUES_PASSWORT' | sha256sum")
 	log.Fatal(http.ListenAndServe(listenAddr, mux))
 }
