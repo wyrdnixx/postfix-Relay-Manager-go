@@ -207,8 +207,8 @@ func applyConfig() error {
 	if out, err := runPrivileged("postmap", allowedClientsFile); err != nil {
 		return fmt.Errorf("postmap fehlgeschlagen: %w\n%s", err, out)
 	}
-	if out, err := runPrivileged("systemctl", "restart", "postfix"); err != nil {
-		return fmt.Errorf("restart fehlgeschlagen: %w\n%s", err, out)
+	if out, err := runPrivileged("postfix", "reload"); err != nil {
+		return fmt.Errorf("reload fehlgeschlagen: %w\n%s", err, out)
 	}
 	return nil
 }
