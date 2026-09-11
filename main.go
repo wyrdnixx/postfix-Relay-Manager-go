@@ -1,6 +1,7 @@
 package main
 
 import (
+	"crypto/tls"
 	"log"
 	"net/http"
 	"os"
@@ -24,6 +25,10 @@ func main() {
 	dataFilePath = filepath.Join(filepath.Dir(exe), "data.json")
 	log.Printf("Datenpfad: %s", dataFilePath)
 
+	// Zertifikat und Schlüssel ebenfalls relativ zur Exe
+	certFile := filepath.Join(filepath.Dir(exe), "cert.pem")
+	keyFile := filepath.Join(filepath.Dir(exe), "key.pem")
+
 	if err := loadData(); err != nil {
 		log.Fatal("data.json laden fehlgeschlagen: ", err)
 	}
@@ -33,7 +38,11 @@ func main() {
 	}
 
 	setPasswordHash(appData.Config.AdminPasswordHash)
-	log.Printf("Starte auf http://0.0.0.0%s", listenAddr)
+
+	// Nutzungsstatistik: Mail-Log periodisch im Hintergrund auswerten
+	go startUsageStatsUpdater()
+
+	log.Printf("Starte auf https://0.0.0.0%s", listenAddr)
 
 	mux := http.NewServeMux()
 
@@ -66,5 +75,31 @@ func main() {
 	mux.HandleFunc("POST /api/preview", authMiddleware(handleApiPreview))
 	mux.HandleFunc("GET /api/resolve", authMiddleware(handleApiResolve))
 
-	log.Fatal(http.ListenAndServe(listenAddr, mux))
+	// Nur TLS 1.2 + 1.3, moderne AEAD-Cipher mit Forward Secrecy.
+	// Die CipherSuites-Liste gilt ausschließlich für TLS 1.2; die
+	// TLS-1.3-Cipher legt Go selbst fest und sind allesamt sicher.
+	tlsConfig := &tls.Config{
+		MinVersion: tls.VersionTLS12,
+		CipherSuites: []uint16{
+			tls.TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,
+			tls.TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,
+			tls.TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384,
+			tls.TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,
+			tls.TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305,
+			tls.TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305,
+		},
+		CurvePreferences: []tls.CurveID{
+			tls.X25519,
+			tls.CurveP256,
+			tls.CurveP384,
+		},
+	}
+
+	srv := &http.Server{
+		Addr:      listenAddr,
+		Handler:   mux,
+		TLSConfig: tlsConfig,
+	}
+
+	log.Fatal(srv.ListenAndServeTLS(certFile, keyFile))
 }

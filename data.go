@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"sync"
+	"time"
 )
 
 // RelayServer beschreibt einen SMTP-Relay-Server mit Host und Port.
@@ -29,11 +30,13 @@ type AppConfig struct {
 
 // System represents a client system allowed to relay mail.
 type System struct {
-	ID       string `json:"id"`
-	Name     string `json:"name"`
-	IP       string `json:"ip"`
-	Type     string `json:"type"`     // "internal" oder "external"
-	Category string `json:"category"` // "printer","server","scanner","network","other"
+	ID         string    `json:"id"`
+	Name       string    `json:"name"`
+	IP         string    `json:"ip"`
+	Type       string    `json:"type"`     // "internal" oder "external"
+	Category   string    `json:"category"` // "printer","server","scanner","network","other"
+	UsageCount int64     `json:"usageCount"`
+	LastUsed   time.Time `json:"lastUsed,omitempty"`
 }
 
 // AppData is the persistent JSON data store.
@@ -42,6 +45,7 @@ type AppData struct {
 	BaseMynetworks string     `json:"baseMynetworks"`
 	AllManagedIPs  []string   `json:"allManagedIps"`
 	Config         *AppConfig `json:"config,omitempty"`
+	LastStatsTime  time.Time  `json:"lastStatsTime,omitempty"`
 }
 
 var (
@@ -62,6 +66,7 @@ func loadData() error {
 	if err := json.Unmarshal(b, &appData); err != nil {
 		return err
 	}
+
 	// Konfiguration aus data.json auf globale Variablen anwenden (überschreibt config.go-Defaults)
 	if c := appData.Config; c != nil {
 		relayServersInternal = c.RelayServersInternal

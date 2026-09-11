@@ -195,7 +195,7 @@ func runPostfixChecks() []CheckResult {
 				Message: "sudo ohne Passwort nicht verfügbar",
 				Detail: "Der Prozess läuft nicht als root und kann sudo nicht passwortlos ausführen.\n" +
 					"Fügen Sie in /etc/sudoers (per visudo) folgende Zeile für den Dienstbenutzer hinzu:\n" +
-					"  relay-manager ALL=(ALL) NOPASSWD: /usr/bin/postmap, /usr/bin/systemctl reload postfix",
+					"  relay-manager ALL=(ALL) NOPASSWD: /usr/sbin/postmap, /usr/bin/systemctl reload postfix",
 			})
 		} else {
 			results = append(results, CheckResult{
