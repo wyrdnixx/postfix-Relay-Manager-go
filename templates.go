@@ -281,7 +281,7 @@ func indexPage(systems []System, flash *Flash) string {
 
 	var rows strings.Builder
 	if len(systems) == 0 {
-		rows.WriteString(`<tr><td colspan="5" class="empty">Keine Systeme konfiguriert.</td></tr>`)
+		rows.WriteString(`<tr><td colspan="7" class="empty">Keine Systeme konfiguriert.</td></tr>`)
 	} else {
 		for _, s := range systems {
 			cat := catKey(s.Category)
@@ -291,23 +291,32 @@ func indexPage(systems []System, flash *Flash) string {
 			typLbl := typeLabel[s.Type]
 			typCss := typeCss[s.Type]
 
+			// Sortierschlüssel für die neuen Spalten (lückenlos lexikografisch sortierbar)
+			usageKey := fmt.Sprintf("%012d", s.UsageCount)
+			lastKey := "0"
+			if !s.LastUsed.IsZero() {
+				lastKey = s.LastUsed.Format("20060102150405")
+			}
+
 			fmt.Fprintf(&rows,
 				`<tr data-category="%s">
-        <td data-sort="%s">%s</td>
-        <td data-sort="%s"><span class="badge %s">%s %s</span></td>
-        <td data-sort="%s">
-          <code>%s</code>
-          <div class="ip-hn" data-ip="%s"></div>
-        </td>
-        <td><span class="%s">%s</span></td>
-        <td class="actions">
-          <a href="/edit/%s" class="btn btn-warn">Bearbeiten</a>
-          <form method="POST" action="/delete/%s"
-                onsubmit="return confirm('System %s wirklich löschen?')">
-            <button type="submit" class="btn btn-danger">Löschen</button>
-          </form>
-        </td>
-      </tr>`,
+<td data-sort="%s">%s</td>
+<td data-sort="%s"><span class="badge %s">%s %s</span></td>
+<td data-sort="%s">
+<code>%s</code>
+<div class="ip-hn" data-ip="%s"></div>
+</td>
+<td><span class="%s">%s</span></td>
+<td data-sort="%s" style="text-align:right">%d</td>
+<td data-sort="%s" style="white-space:nowrap;color:#666">%s</td>
+<td class="actions">
+<a href="/edit/%s" class="btn btn-warn">Bearbeiten</a>
+<form method="POST" action="/delete/%s"
+onsubmit="return confirm('System %s wirklich löschen?')">
+<button type="submit" class="btn btn-danger">Löschen</button>
+</form>
+</td>
+</tr>`,
 				esc(cat),
 				esc(nameOrDash(s.Name)),
 				esc(nameOrDash(s.Name)),
@@ -320,6 +329,10 @@ func indexPage(systems []System, flash *Flash) string {
 				esc(s.IP),
 				esc(typCss),
 				esc(typLbl),
+				usageKey,
+				s.UsageCount,
+				lastKey,
+				esc(s.LastUsedDisplay()),
 				esc(s.ID),
 				esc(s.ID),
 				esc(s.IP),
@@ -329,115 +342,110 @@ func indexPage(systems []System, flash *Flash) string {
 
 	body := fmt.Sprintf(`
 <div class="card">
-  <h2>Relay-Server Status</h2>
-  <table>
-    <thead><tr><th>Server</th><th>Port</th><th>Status</th></tr></thead>
-    <tbody id="health-body">
-      <tr><td colspan="3" style="text-align:center;color:#aaa;padding:16px;font-size:.88rem">Wird geprüft...</td></tr>
-    </tbody>
-  </table>
+<h2>Relay-Server Status</h2>
+<table>
+<thead><tr><th>Server</th><th>Port</th><th>Status</th></tr></thead>
+<tbody id="health-body">
+<tr><td colspan="3" style="text-align:center;color:#aaa;padding:16px;font-size:.88rem">Wird geprüft...</td></tr>
+</tbody>
+</table>
 </div>
 
 <div class="card">
-  <div class="toolbar">
-    <h2>Zugelassene Systeme (%d)</h2>
-    <div style="display:flex;gap:10px;align-items:center">
-      <input type="search" id="sys-search" placeholder="Name, IP oder Hostname suchen..."
-             style="padding:7px 12px;border:1px solid #d0d0d0;border-radius:6px;font-size:.85rem;width:240px">
-      <a href="/bulk-add" class="btn btn-preview">↑ Bulk-Import</a>
-      <a href="/add" class="btn btn-primary">+ System hinzufügen</a>
-    </div>
-  </div>
-
-  <div class="cat-filters">
-    <button class="cat-btn active" onclick="filterCat('')" data-cat="">Alle</button>
-    <button class="cat-btn" onclick="filterCat('printer')" data-cat="printer">🖨 Drucker</button>
-    <button class="cat-btn" onclick="filterCat('server')" data-cat="server">🖥 Server</button>
-    <button class="cat-btn" onclick="filterCat('scanner')" data-cat="scanner">📠 Scanner</button>
-    <button class="cat-btn" onclick="filterCat('network')" data-cat="network">🔌 Netzwerk</button>
-    <button class="cat-btn" onclick="filterCat('other')" data-cat="other">📦 Sonstiges</button>
-  </div>
-
-  <table>
-    <thead>
-      <tr>
-        <th class="sortable" onclick="sortTable(0)">Bezeichnung <span class="sort-icon" id="si-0">⇅</span></th>
-        <th class="sortable" onclick="sortTable(1)">Kategorie <span class="sort-icon" id="si-1">⇅</span></th>
-        <th class="sortable" onclick="sortTable(2)">IP-Adresse <span class="sort-icon" id="si-2">⇅</span></th>
-        <th class="sortable" onclick="sortTable(3)">Versandtyp <span class="sort-icon" id="si-3">⇅</span></th>
-        <th>Aktionen</th>
-      </tr>
-    </thead>
-    <tbody id="sys-tbody">%s</tbody>
-  </table>
+<div class="toolbar">
+<h2>Zugelassene Systeme (%d)</h2>
+<div style="display:flex;gap:10px;align-items:center">
+<input type="search" id="sys-search" placeholder="Name, IP oder Hostname suchen..."
+style="padding:7px 12px;border:1px solid #d0d0d0;border-radius:6px;font-size:.85rem;width:240px">
+<a href="/bulk-add" class="btn btn-preview">↑ Bulk-Import</a>
+<a href="/add" class="btn btn-primary">+ System hinzufügen</a>
+</div>
+</div>
+<div class="cat-filters">
+<button class="cat-btn active" onclick="filterCat('')" data-cat="">Alle</button>
+<button class="cat-btn" onclick="filterCat('printer')" data-cat="printer">🖨 Drucker</button>
+<button class="cat-btn" onclick="filterCat('server')" data-cat="server">🖥 Server</button>
+<button class="cat-btn" onclick="filterCat('scanner')" data-cat="scanner">📠 Scanner</button>
+<button class="cat-btn" onclick="filterCat('network')" data-cat="network">🔌 Netzwerk</button>
+<button class="cat-btn" onclick="filterCat('other')" data-cat="other">📦 Sonstiges</button>
+</div>
+<table>
+<thead>
+<tr>
+<th class="sortable" onclick="sortTable(0)">Bezeichnung <span class="sort-icon" id="si-0">⇅</span></th>
+<th class="sortable" onclick="sortTable(1)">Kategorie <span class="sort-icon" id="si-1">⇅</span></th>
+<th class="sortable" onclick="sortTable(2)">IP-Adresse <span class="sort-icon" id="si-2">⇅</span></th>
+<th class="sortable" onclick="sortTable(3)">Versandtyp <span class="sort-icon" id="si-3">⇅</span></th>
+<th class="sortable" onclick="sortTable(4)">Gesendet <span class="sort-icon" id="si-4">⇅</span></th>
+<th class="sortable" onclick="sortTable(5)">Zuletzt gesendet <span class="sort-icon" id="si-5">⇅</span></th>
+<th>Aktionen</th>
+</tr>
+</thead>
+<tbody id="sys-tbody">%s</tbody>
+</table>
 </div>
 
 <script>
 function esc(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');}
 // ── Health ──
 fetch('/api/health')
-  .then(r => r.json())
-  .then(health => {
-    document.getElementById('health-body').innerHTML = health.map(h =>
-      '<tr><td><code>' + esc(h.server) + '</code></td>' +
-      '<td>Port ' + esc(h.port) + ' (' + esc(h.label) + ')</td>' +
-      '<td><span class="badge ' + (h.ok ? 'badge-ok' : 'badge-ko') + '">' +
-      (h.ok ? 'Erreichbar' : 'Nicht erreichbar') + '</span></td></tr>'
-    ).join('');
-  })
-  .catch(() => {
-    document.getElementById('health-body').innerHTML =
-      '<tr><td colspan="3" style="text-align:center;color:#c62828;padding:16px;font-size:.88rem">Fehler beim Laden</td></tr>';
-  });
-
+.then(r => r.json())
+.then(health => {
+document.getElementById('health-body').innerHTML = health.map(h =>
+'<tr><td><code>' + esc(h.server) + '</code></td>' +
+'<td>Port ' + esc(h.port) + ' (' + esc(h.label) + ')</td>' +
+'<td><span class="badge ' + (h.ok ? 'badge-ok' : 'badge-ko') + '">' +
+(h.ok ? 'Erreichbar' : 'Nicht erreichbar') + '</span></td></tr>'
+).join('');
+})
+.catch(() => {
+document.getElementById('health-body').innerHTML =
+'<tr><td colspan="3" style="text-align:center;color:#c62828;padding:16px;font-size:.88rem">Fehler beim Laden</td></tr>';
+});
 // ── Hostname-Auflösung ──
 fetch('/api/resolve')
-  .then(r => r.json())
-  .then(hosts => {
-    document.querySelectorAll('.ip-hn[data-ip]').forEach(el => {
-      const hn = hosts[el.dataset.ip];
-      if (hn) { el.textContent = hn; el.style.display = 'block'; }
-    });
-  })
-  .catch(() => {});
-
+.then(r => r.json())
+.then(hosts => {
+document.querySelectorAll('.ip-hn[data-ip]').forEach(el => {
+const hn = hosts[el.dataset.ip];
+if (hn) { el.textContent = hn; el.style.display = 'block'; }
+});
+})
+.catch(() => {});
 // ── Sortierung ──
 let sortCol = -1, sortAsc = true;
 function sortTable(col) {
-  if (sortCol === col) sortAsc = !sortAsc;
-  else { sortCol = col; sortAsc = true; }
-
-  const tbody = document.getElementById('sys-tbody');
-  const rows = Array.from(tbody.querySelectorAll('tr'));
-  rows.sort((a, b) => {
-    const av = a.cells[col]?.dataset.sort ?? a.cells[col]?.textContent.trim() ?? '';
-    const bv = b.cells[col]?.dataset.sort ?? b.cells[col]?.textContent.trim() ?? '';
-    return av.localeCompare(bv, 'de', {numeric: false}) * (sortAsc ? 1 : -1);
-  });
-  rows.forEach(r => tbody.appendChild(r));
-
-  for (let i = 0; i < 4; i++) {
-    const el = document.getElementById('si-' + i);
-    if (el) el.textContent = i === col ? (sortAsc ? '↑' : '↓') : '⇅';
-  }
-  applyFilters();
+if (sortCol === col) sortAsc = !sortAsc;
+else { sortCol = col; sortAsc = true; }
+const tbody = document.getElementById('sys-tbody');
+const rows = Array.from(tbody.querySelectorAll('tr'));
+rows.sort((a, b) => {
+const av = a.cells[col]?.dataset.sort ?? a.cells[col]?.textContent.trim() ?? '';
+const bv = b.cells[col]?.dataset.sort ?? b.cells[col]?.textContent.trim() ?? '';
+return av.localeCompare(bv, 'de', {numeric: false}) * (sortAsc ? 1 : -1);
+});
+rows.forEach(r => tbody.appendChild(r));
+for (let i = 0; i < 6; i++) {
+const el = document.getElementById('si-' + i);
+if (el) el.textContent = i === col ? (sortAsc ? '↑' : '↓') : '⇅';
 }
-
+applyFilters();
+}
 // ── Filter ──
 let activeCategory = '';
 function filterCat(cat) {
-  activeCategory = cat;
-  document.querySelectorAll('.cat-btn').forEach(b =>
-    b.classList.toggle('active', b.dataset.cat === cat));
-  applyFilters();
+activeCategory = cat;
+document.querySelectorAll('.cat-btn').forEach(b =>
+b.classList.toggle('active', b.dataset.cat === cat));
+applyFilters();
 }
 function applyFilters() {
-  const q = (document.getElementById('sys-search').value || '').toLowerCase();
-  document.querySelectorAll('#sys-tbody tr').forEach(row => {
-    const matchText = row.textContent.toLowerCase().includes(q);
-    const matchCat = !activeCategory || row.dataset.category === activeCategory;
-    row.style.display = (matchText && matchCat) ? '' : 'none';
-  });
+const q = (document.getElementById('sys-search').value || '').toLowerCase();
+document.querySelectorAll('#sys-tbody tr').forEach(row => {
+const matchText = row.textContent.toLowerCase().includes(q);
+const matchCat = !activeCategory || row.dataset.category === activeCategory;
+row.style.display = (matchText && matchCat) ? '' : 'none';
+});
 }
 document.getElementById('sys-search').addEventListener('input', applyFilters);
 </script>`, len(systems), rows.String())

@@ -74,6 +74,7 @@ func handleLoginPost(w http.ResponseWriter, r *http.Request) {
 	r.ParseForm()
 	user := r.FormValue("username")
 	pass := r.FormValue("password")
+
 	h := sha256.Sum256([]byte(pass))
 	if user == adminUsername && fmt.Sprintf("%x", h) == getPasswordHash() {
 		_, sess := createSession(w)
@@ -81,6 +82,7 @@ func handleLoginPost(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/", http.StatusFound)
 		return
 	}
+
 	w.WriteHeader(http.StatusUnauthorized)
 	writeHTML(w, loginPage(true))
 }
@@ -101,6 +103,7 @@ func handleIndex(w http.ResponseWriter, r *http.Request) {
 	if sess != nil {
 		flash = sess.getFlash()
 	}
+
 	appMu.Lock()
 	systems := make([]System, len(appData.Systems))
 	copy(systems, appData.Systems)
@@ -125,6 +128,7 @@ func handleAddPost(w http.ResponseWriter, r *http.Request) {
 	if !validCategories[category] {
 		category = "other"
 	}
+
 	sys := System{IP: ip, Name: name, Type: sysType, Category: category}
 
 	if !isValidIP(ip) || (sysType != "internal" && sysType != "external") {
@@ -181,6 +185,7 @@ func handleEditGet(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	appMu.Unlock()
+
 	if found == nil {
 		http.Redirect(w, r, "/", http.StatusFound)
 		return
@@ -198,6 +203,7 @@ func handleEditPost(w http.ResponseWriter, r *http.Request) {
 	if !validCategories[category] {
 		category = "other"
 	}
+
 	sys := System{ID: id, IP: ip, Name: name, Type: sysType, Category: category}
 
 	if !isValidIP(ip) || (sysType != "internal" && sysType != "external") {
@@ -227,6 +233,11 @@ func handleEditPost(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+
+	// Nutzungsstatistik nicht durch das Formular-System überschreiben
+	sys.UsageCount = appData.Systems[idx].UsageCount
+	sys.LastUsed = appData.Systems[idx].LastUsed
+
 	appData.Systems[idx] = sys
 	addManagedIP(ip)
 	applyErr := applyConfig()
@@ -312,10 +323,12 @@ func handleSettingsGet(w http.ResponseWriter, r *http.Request) {
 	if sess != nil {
 		flash = sess.getFlash()
 	}
+
 	appMu.Lock()
 	intSrvs := append([]RelayServer{}, relayServersInternal...)
 	extSrvs := append([]RelayServer{}, relayServersExternal...)
 	appMu.Unlock()
+
 	writeHTML(w, settingsPage(flash, intSrvs, extSrvs))
 }
 
@@ -497,7 +510,6 @@ func handleApiPreview(w http.ResponseWriter, r *http.Request) {
 	} else {
 		hypo = append(hypo, System{IP: ip, Type: sysType})
 	}
-
 	hypoManaged := make([]string, len(appData.AllManagedIPs))
 	copy(hypoManaged, appData.AllManagedIPs)
 	found := false
@@ -564,9 +576,9 @@ func handleApiResolve(w http.ResponseWriter, _ *http.Request) {
 
 // BulkResult fasst die Ergebnisse eines Bulk-Imports zusammen.
 type BulkResult struct {
-	Added   []string // erfolgreich hinzugefügte IPs
-	Skipped []string // bereits vorhanden
-	Invalid []string // ungültige Eingaben
+	Added    []string // erfolgreich hinzugefügte IPs
+	Skipped  []string // bereits vorhanden
+	Invalid  []string // ungültige Eingaben
 	ApplyErr error
 }
 
